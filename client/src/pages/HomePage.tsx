@@ -22,9 +22,9 @@ export function HomePage({ connected, busy, createRoom, joinRoom }: HomePageProp
   return (
     <section className="connection-card" aria-labelledby="home-title">
       <div className="card-heading">
-        <p className="eyebrow">Le meilleur ingrédient, c’est vous.</p>
-        <h2 id="home-title">Réunis tes complices.</h2>
-        <p>Un pseudo, un code, et tout le monde se retrouve.</p>
+        <p className="eyebrow">Accueil.</p>
+        <h2 id="home-title">Lobby.</h2>
+        <p>Entre ton blase.</p>
       </div>
       <div className="mode-switch" aria-label="Choisir une action">
         <button type="button" aria-pressed={mode === 'create'} disabled={busy} onClick={() => setMode('create')}>Créer un salon</button>
@@ -33,9 +33,9 @@ export function HomePage({ connected, busy, createRoom, joinRoom }: HomePageProp
       <form onSubmit={submit} aria-busy={busy}>
         <label htmlFor="nickname">Ton pseudo</label>
         <input id="nickname" name="nickname" autoComplete="nickname" required minLength={2} maxLength={24}
-          placeholder="Ex. : Camille" value={nickname} disabled={busy}
+          placeholder="Ex. : Lukas" value={nickname} disabled={busy}
           onChange={(event) => setNickname(event.target.value)} aria-describedby="nickname-hint" />
-        <p className="field-hint" id="nickname-hint">2 à 24 caractères. Choisis un pseudo que tes amis reconnaissent.</p>
+        <p className="field-hint" id="nickname-hint">2 à 24 caractères. Choisis bien.</p>
         {mode === 'join' && (
           <div className="code-field">
             <label htmlFor="room-code">Code du salon</label>

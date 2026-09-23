@@ -27,7 +27,7 @@ function App() {
         </>
       )}
       <footer>
-        <p>À partager entre amis. Les goûts discutables sont les bienvenus.</p>
+        <p>Ici le footer.</p>
         <details className="connection-diagnostics">
           <summary>Vérifier ma connexion</summary>
           <button className="secondary-button" onClick={ping} disabled={!connected || probe.status === 'pending'}>

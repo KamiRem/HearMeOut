@@ -13,7 +13,7 @@ export function RoomPage({ membership: { room, playerId }, busy, connected, leav
   return (
     <section className="connection-card room-card" aria-labelledby="room-title">
       <div className="card-heading">
-        <p className="eyebrow">Votre petit comité</p>
+        <p className="eyebrow">Le gang </p>
         <h1 id="room-title" className="room-title">Le salon est ouvert.</h1>
         <p>Transmets ce code à tes amis pour qu’ils te rejoignent.</p>
         <strong className="room-code" aria-label={`Code du salon : ${room.code}`}>{room.code}</strong>
@@ -31,7 +31,7 @@ export function RoomPage({ membership: { room, playerId }, busy, connected, leav
           </li>
         ))}
       </ul>
-      {room.players.length === 1 && <p className="field-hint">Tu es le premier arrivé. Il ne manque que tes amis !</p>}
+      {room.players.length === 1 && <p className="field-hint">Tu es le premier arrivé. Invites tes potes !</p>}
       <p className="leave-hint" id="leave-hint">
         {isCreator ? 'Si tu pars, le salon sera fermé pour tout le monde.' : 'Tu pourras revenir avec le même code tant que le salon reste ouvert.'}
       </p>
