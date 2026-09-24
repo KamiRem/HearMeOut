@@ -1,6 +1,10 @@
+import type { GameSettings } from './lobby.ts'
+import type { GameState } from './game.ts'
+
 export interface Player {
   id: string
   nickname: string
+  isReady: boolean
 }
 
 export interface RoomSnapshot {
@@ -10,6 +14,9 @@ export interface RoomSnapshot {
   revision: number
   capacity: number
   players: Player[]
+  settings: GameSettings
+  settingsRevision: number
+  state: GameState
 }
 
 export interface RoomMembership {

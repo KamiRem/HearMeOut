@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { test, type TestContext } from 'node:test'
-import type { ClientToServerEvents, Result, RoomClosed, RoomMembership, RoomSnapshot, ServerToClientEvents } from '@hear-me-out/shared'
+import type { ClientToServerEvents, GameSettings, Result, RoomClosed, RoomMembership, RoomSnapshot, ServerToClientEvents } from '@hear-me-out/shared'
 import { io, type Socket } from 'socket.io-client'
 import { buildApp } from '../src/app.ts'
 import { generateRoomCode, RoomError, RoomService } from '../src/services/roomService.ts'
@@ -77,7 +77,7 @@ test('create and join broadcast the same roster without exposing connection ids'
   assert.deepEqual(await guestUpdate, joined.room)
   assert.equal(joined.room.players.length, 2)
   assert.equal(joined.room.revision, 2)
-  for (const player of joined.room.players) assert.deepEqual(Object.keys(player).sort(), ['id', 'nickname'])
+  for (const player of joined.room.players) assert.deepEqual(Object.keys(player).sort(), ['id', 'isReady', 'nickname'])
   assert.equal(value(await sync(guest))?.playerId, joined.playerId)
 })
 
@@ -225,4 +225,167 @@ test('code generation terminates even if every candidate collides', () => {
   const rooms = new RoomService({ generateCode: () => 'AAAAAA' })
   rooms.create('first', 'Camille')
   assert.throws(() => rooms.create('second', 'Alex'), (error) => error instanceof RoomError && error.code === 'SERVER_CAPACITY')
+})
+
+function lobbyCommand(room: RoomSnapshot) {
+  return { requestId: randomUUID(), roomId: room.id, settingsRevision: room.settingsRevision }
+}
+
+function ready(client: Client, room: RoomSnapshot, isReady = true): Promise<Result<RoomMembership>> {
+  return client.timeout(2000).emitWithAck('player:ready', { ...lobbyCommand(room), isReady })
+}
+
+function settings(client: Client, room: RoomSnapshot, next: GameSettings): Promise<Result<RoomMembership>> {
+  return client.timeout(2000).emitWithAck('room:settings:update', { ...lobbyCommand(room), settings: next })
+}
+
+function start(client: Client, room: RoomSnapshot): Promise<Result<RoomMembership>> {
+  return client.timeout(2000).emitWithAck('game:start', lobbyCommand(room))
+}
+
+test('lobby defaults and own readiness synchronize without changing another player', { timeout: 10_000 }, async (t) => {
+  const connect = await setup(t)
+  const host = await connect()
+  const guest = await connect()
+  const { room } = value(await create(host))
+  const member = value(await join(guest, room.code))
+  assert.deepEqual(room.settings, { rounds: 3, submissionDuration: 90, voteDuration: 10 })
+  assert.deepEqual(room.state, { phase: 'LOBBY', version: 0 })
+  assert.equal(room.settingsRevision, 1)
+  assert.ok(member.room.players.every((player) => !player.isReady))
+  const broadcast = update(host)
+  const changed = value(await ready(guest, room))
+  assert.deepEqual(await broadcast, changed.room)
+  assert.equal(changed.room.players.find((p) => p.id === member.playerId)?.isReady, true)
+  assert.equal(changed.room.players.find((p) => p.id === room.hostPlayerId)?.isReady, false)
+  const unchanged = value(await ready(guest, room))
+  assert.equal(unchanged.room.revision, changed.room.revision)
+  assert.ok(value(await ready(guest, room, false)).room.players.every((p) => !p.isReady))
+})
+
+test('only the Host can configure or start and commands cannot target another room', { timeout: 10_000 }, async (t) => {
+  const connect = await setup(t)
+  const host = await connect()
+  const guest = await connect()
+  const stranger = await connect()
+  const { room } = value(await create(host))
+  value(await join(guest, room.code))
+  const other = value(await create(stranger, 'Autre'))
+  failure(await settings(guest, room, room.settings), 'HOST_ONLY')
+  failure(await start(guest, room), 'HOST_ONLY')
+  failure(await ready(stranger, room), 'NOT_A_MEMBER')
+  failure(await settings(stranger, room, room.settings), 'NOT_A_MEMBER')
+  failure(await start(stranger, room), 'NOT_A_MEMBER')
+  failure(await host.timeout(2000).emitWithAck('player:ready', {
+    ...lobbyCommand(room), isReady: true, playerId: other.playerId,
+  } as Parameters<ClientToServerEvents['player:ready']>[0]), 'INVALID_PAYLOAD')
+  assert.deepEqual(value(await sync(stranger))?.room, other.room)
+})
+
+test('settings changes reset all readiness and reject approvals for old settings', { timeout: 10_000 }, async (t) => {
+  const connect = await setup(t)
+  const host = await connect()
+  const guest = await connect()
+  const { room } = value(await create(host))
+  value(await join(guest, room.code))
+  value(await ready(host, room))
+  const approval = { ...lobbyCommand(room), isReady: true }
+  value(await guest.timeout(2000).emitWithAck('player:ready', approval))
+  const broadcast = update(guest)
+  const changed = value(await settings(host, room, { rounds: 5, submissionDuration: 60, voteDuration: 15 }))
+  assert.deepEqual(await broadcast, changed.room)
+  assert.equal(changed.room.settingsRevision, 2)
+  assert.ok(changed.room.players.every((player) => !player.isReady))
+  failure(await ready(guest, room), 'STALE_SETTINGS')
+  failure(await start(host, room), 'STALE_SETTINGS')
+  failure(await settings(host, room, room.settings), 'STALE_SETTINGS')
+  // A replay acknowledges the old operation but must never reapply its state.
+  value(await guest.timeout(2000).emitWithAck('player:ready', approval))
+  assert.ok(value(await sync(guest))?.room.players.every((player) => !player.isReady))
+  value(await ready(host, changed.room))
+  const noChange = value(await settings(host, changed.room, changed.room.settings))
+  assert.equal(noChange.room.settingsRevision, 2)
+  assert.equal(noChange.room.players.find((p) => p.id === room.hostPlayerId)?.isReady, true)
+})
+
+test('invalid setting values and nonboolean ready values cannot mutate the lobby', { timeout: 10_000 }, async (t) => {
+  const connect = await setup(t)
+  const host = await connect()
+  const { room } = value(await create(host))
+  const invalid = [
+    { ...room.settings, rounds: 0 }, { ...room.settings, rounds: 11 },
+    { ...room.settings, rounds: 2.5 }, { ...room.settings, rounds: '3' },
+    { ...room.settings, submissionDuration: 14 }, { ...room.settings, submissionDuration: 181 },
+    { ...room.settings, voteDuration: 4 }, { ...room.settings, voteDuration: 31 },
+    { ...room.settings, extra: true }, {}, null,
+  ]
+  for (const candidate of invalid) {
+    failure(await settings(host, room, candidate as GameSettings), 'INVALID_PAYLOAD')
+  }
+  failure(await host.timeout(2000).emitWithAck('player:ready', {
+    ...lobbyCommand(room), isReady: 'true' as unknown as boolean,
+  }), 'INVALID_PAYLOAD')
+  assert.deepEqual(value(await sync(host))?.room, room)
+  const low = value(await settings(host, room, { rounds: 1, submissionDuration: 15, voteDuration: 5 }))
+  value(await settings(host, low.room, { rounds: 10, submissionDuration: 180, voteDuration: 30 }))
+})
+
+test('launch requires two players and every member ready, including the Host', { timeout: 10_000 }, async (t) => {
+  const connect = await setup(t)
+  const host = await connect()
+  const guest = await connect()
+  const late = await connect()
+  const { room } = value(await create(host))
+  value(await ready(host, room))
+  failure(await start(host, room), 'NOT_ENOUGH_PLAYERS')
+  value(await join(guest, room.code))
+  failure(await start(host, room), 'PLAYERS_NOT_READY')
+  value(await ready(guest, room))
+  value(await ready(host, room, false))
+  failure(await start(host, room), 'PLAYERS_NOT_READY')
+  value(await ready(host, room))
+  value(await join(late, room.code, 'Dernier'))
+  failure(await start(host, room), 'PLAYERS_NOT_READY')
+  const departure = update(host)
+  late.disconnect()
+  await departure
+  const launched = value(await start(host, room))
+  assert.equal(launched.room.state.phase, 'SUBMISSION')
+  assert.equal(launched.room.state.participantIds.length, 2)
+})
+
+test('launch is atomic, broadcast once per operation and freezes the lobby', { timeout: 10_000 }, async (t) => {
+  const connect = await setup(t)
+  const host = await connect()
+  const guest = await connect()
+  const late = await connect()
+  const { room } = value(await create(host))
+  value(await join(guest, room.code))
+  value(await ready(host, room))
+  value(await ready(guest, room))
+  const events: RoomSnapshot[] = []
+  guest.on('room:update', (snapshot) => events.push(snapshot))
+  const command = lobbyCommand(room)
+  const launched = value<RoomMembership>(await host.timeout(2000).emitWithAck('game:start', command))
+  const replay = value<RoomMembership>(await host.timeout(2000).emitWithAck('game:start', command))
+  assert.deepEqual(replay, launched)
+  assert.deepEqual(value(await sync(guest))?.room, launched.room)
+  assert.equal(events.length, 1)
+  assert.ok(launched.room.state.phase === 'SUBMISSION')
+  assert.match(launched.room.state.id, /^[0-9a-f-]{36}$/)
+  assert.ok(launched.room.state.startedAt <= Date.now())
+  assert.equal(launched.room.state.roundNumber, 1)
+  assert.equal(launched.room.state.totalRounds, room.settings.rounds)
+  assert.deepEqual(launched.room.state.participantIds, launched.room.players.map((p) => p.id))
+  failure(await start(host, room), 'INVALID_PHASE')
+  failure(await ready(guest, room, false), 'INVALID_PHASE')
+  failure(await settings(host, room, room.settings), 'INVALID_PHASE')
+  failure(await join(late, room.code, 'Retardataire'), 'INVALID_PHASE')
+  value(await guest.timeout(2000).emitWithAck('room:leave', { requestId: randomUUID(), roomId: room.id }))
+  assert.deepEqual(value(await sync(host))?.room.state, launched.room.state)
+  const untrusted = host as unknown as { emit: (event: string, payload: unknown) => void }
+  for (const event of ['game:transition', 'round:ended', 'room:update']) {
+    untrusted.emit(event, { roomId: room.id, phase: 'GAME_RESULTS' })
+  }
+  assert.deepEqual(value(await sync(host))?.room.state, launched.room.state)
 })

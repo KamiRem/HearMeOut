@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Result, RoomMembership, RoomSnapshot } from '@hear-me-out/shared'
+import type { GameSettings, Result, RoomMembership, RoomSnapshot } from '@hear-me-out/shared'
 import type { createSocket } from '../services/socket'
 
 type ClientSocket = ReturnType<typeof createSocket>
-type Action = 'create' | 'join' | 'leave'
+type Action = 'create' | 'join' | 'leave' | 'ready' | 'settings' | 'start'
 
 export function useRoom(socket: ClientSocket | null) {
   const [membership, setMembership] = useState<RoomMembership | null>(null)
@@ -136,5 +136,29 @@ export function useRoom(socket: ClientSocket | null) {
     }))
   }
 
-  return { membership, pending, message, createRoom, joinRoom, leaveRoom }
+  function setReady(isReady: boolean) {
+    if (!membership) return
+    return request('ready', (client) => client.timeout(5000).emitWithAck('player:ready', {
+      requestId: crypto.randomUUID(), roomId: membership.room.id,
+      settingsRevision: membership.room.settingsRevision, isReady,
+    }))
+  }
+
+  function updateSettings(settings: GameSettings) {
+    if (!membership) return
+    return request('settings', (client) => client.timeout(5000).emitWithAck('room:settings:update', {
+      requestId: crypto.randomUUID(), roomId: membership.room.id,
+      settingsRevision: membership.room.settingsRevision, settings,
+    }))
+  }
+
+  function startGame() {
+    if (!membership) return
+    return request('start', (client) => client.timeout(5000).emitWithAck('game:start', {
+      requestId: crypto.randomUUID(), roomId: membership.room.id,
+      settingsRevision: membership.room.settingsRevision,
+    }))
+  }
+
+  return { membership, pending, message, createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame }
 }

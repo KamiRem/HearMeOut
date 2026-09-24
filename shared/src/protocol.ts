@@ -1,4 +1,5 @@
 import type { CreateRoomCommand, JoinRoomCommand, LeaveRoomCommand, RoomClosed, RoomMembership, RoomSnapshot } from './room.ts'
+import type { LobbyCommand, ReadyCommand, UpdateSettingsCommand } from './lobby.ts'
 
 export interface ServerHello {
   protocolVersion: 1
@@ -22,6 +23,11 @@ export type ErrorCode =
   | 'REQUEST_CONFLICT'
   | 'STALE_REQUEST'
   | 'INTERNAL_ERROR'
+  | 'HOST_ONLY'
+  | 'INVALID_PHASE'
+  | 'STALE_SETTINGS'
+  | 'NOT_ENOUGH_PLAYERS'
+  | 'PLAYERS_NOT_READY'
 
 export type Result<T> =
   | { ok: true; data: T }
@@ -30,6 +36,9 @@ export type Result<T> =
 export type Ack<T> = (result: Result<T>) => void
 
 export interface ClientToServerEvents {
+  'player:ready': (payload: ReadyCommand, ack: Ack<RoomMembership>) => void
+  'room:settings:update': (payload: UpdateSettingsCommand, ack: Ack<RoomMembership>) => void
+  'game:start': (payload: LobbyCommand, ack: Ack<RoomMembership>) => void
   'room:create': (payload: CreateRoomCommand, ack: Ack<RoomMembership>) => void
   'room:join': (payload: JoinRoomCommand, ack: Ack<RoomMembership>) => void
   'room:leave': (payload: LeaveRoomCommand, ack: Ack<{ roomId: string }>) => void

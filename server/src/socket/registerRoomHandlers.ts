@@ -1,8 +1,8 @@
-import type { Ack, ClientToServerEvents, Result, RoomClosed, ServerToClientEvents } from '@hear-me-out/shared'
+import type { Ack, ClientToServerEvents, Result, RoomClosed, RoomMembership, ServerToClientEvents } from '@hear-me-out/shared'
 import type { Server, Socket } from 'socket.io'
 import type { z } from 'zod'
 import { RoomError, RoomService, type Departure } from '../services/roomService.ts'
-import { createRoomSchema, joinRoomSchema, leaveRoomSchema, syncRoomSchema } from './roomSchemas.ts'
+import { createRoomSchema, joinRoomSchema, leaveRoomSchema, readySchema, startGameSchema, syncRoomSchema, updateSettingsSchema } from './roomSchemas.ts'
 
 type RoomServer = Server<ClientToServerEvents, ServerToClientEvents>
 type RoomSocket = Socket<ClientToServerEvents, ServerToClientEvents>
@@ -32,7 +32,10 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
     }
     const parsed = schema.safeParse(payload)
     if (!parsed.success) {
-      ack({ ok: false, error: { code: 'INVALID_PAYLOAD', message: 'Vérifie le code et ton pseudo (2 à 24 caractères, lettres et chiffres).' } })
+      const message = event === 'room:create' || event === 'room:join'
+        ? 'Vérifie le code et ton pseudo (2 à 24 caractères, lettres et chiffres).'
+        : 'Demande invalide. Vérifie les valeurs et les limites indiquées.'
+      ack({ ok: false, error: { code: 'INVALID_PAYLOAD', message } })
       return
     }
     const command = parsed.data
@@ -68,7 +71,7 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
       }
       requests.set(command.requestId, {
         fingerprint, result,
-        membershipRoomId: result.ok && (event === 'room:create' || event === 'room:join')
+        membershipRoomId: result.ok && event !== 'room:leave'
           ? rooms.current(socket.id)?.room.id : undefined,
       })
     }
@@ -108,6 +111,20 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
   }))
 
   socket.on('room:sync', (payload, ack) => run('room:sync', syncRoomSchema, payload, ack, () => rooms.current(socket.id)))
+
+  function publishLobby(membership: RoomMembership) {
+    io.to(`room:${membership.room.code}`).emit('room:update', membership.room)
+    return membership
+  }
+
+  socket.on('player:ready', (payload, ack) => run('player:ready', readySchema, payload, ack, (command) =>
+    publishLobby(rooms.setReady(socket.id, command.roomId, command.settingsRevision, command.isReady))))
+
+  socket.on('room:settings:update', (payload, ack) => run('room:settings:update', updateSettingsSchema, payload, ack, (command) =>
+    publishLobby(rooms.updateSettings(socket.id, command.roomId, command.settingsRevision, command.settings))))
+
+  socket.on('game:start', (payload, ack) => run('game:start', startGameSchema, payload, ack, (command) =>
+    publishLobby(rooms.startGame(socket.id, command.roomId, command.settingsRevision))))
 
   socket.on('disconnect', () => {
     publishDeparture(rooms.leave(socket.id), 'HOST_DISCONNECTED')

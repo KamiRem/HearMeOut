@@ -119,6 +119,32 @@ button.secondary-button:hover:not(:disabled) { background: #efe7dc; }
 .connection-diagnostics { max-width: 300px; margin: 18px auto 0; }
 .connection-diagnostics summary { cursor: pointer; padding: 6px; }
 .connection-diagnostics button { margin-top: 10px; padding: 10px; font-size: 12px; }
+.host-badge, .ready-badge { font-size: 11px; padding: 4px 8px; border-radius: 20px; white-space: nowrap; }
+.host-badge { background: #f7c852; color: #302820; font-weight: 700; }
+.ready-badge { background: #efe7dc; color: #716357; margin-left: auto; }
+.ready-badge.is-ready { background: #dcebe0; color: #225f46; }
+.player-list li { flex-wrap: wrap; }
+.player-name { min-width: 0; }
+.lobby-controls, .game-launched { margin: 28px 0; padding: 24px 0; border-block: 1px solid #e9dfd2; }
+.settings-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.settings-fields legend { padding: 0; margin-bottom: 18px; }
+.settings-grid, .settings-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.settings-grid input { min-width: 0; }
+.settings-summary { margin: 20px 0; }
+.settings-summary dt { font-size: 12px; color: #716357; }
+.settings-summary dd { margin: 8px 0 0; font-size: 17px; font-weight: 700; }
+.ready-controls { margin: 24px 0; }
+.ready-controls > p { font-size: 14px; }
+.ready-button { justify-content: center; background: #256b59; }
+.ready-button.is-ready { color: #225f46; background: #dcebe0; }
+.ready-button.is-ready:hover:not(:disabled) { background: #c4decb; }
+.start-game { justify-content: center; }
+.game-launched { background: #eef4ee; border: 1px solid #b8d5be; padding: 20px; border-radius: 12px; }
+@media (max-width: 540px) {
+  .settings-grid, .settings-summary { grid-template-columns: 1fr; gap: 12px; }
+  .player-list li { gap: 8px; }
+  .player-name { max-width: calc(100% - 52px); }
+}
 @media (max-width: 420px) {
   .masthead .connection-status { font-size: 11px; }
   .players-heading { align-items: start; flex-direction: column; gap: 0; }

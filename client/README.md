@@ -10,6 +10,8 @@ avec `npm run dev -w @hear-me-out/client`. Le backend doit tourner séparément.
 - `src/hooks/useConnection.ts` : connexion, nettoyage et test aller-retour.
 - `src/hooks/useRoom.ts` : commandes de salon, snapshots, erreurs et synchronisation.
 - `src/pages/HomePage.tsx` : pseudonyme, création et jonction par code.
-- `src/pages/RoomPage.tsx` : code du salon, joueurs connectés et départ.
+- `src/pages/RoomPage.tsx` : salon, Host, Ready, départ et confirmation du lancement.
+- `src/components/LobbyControls.tsx` : brouillon des paramètres, Ready et bouton du Host.
+- `src/components/GamePhasePanel.tsx` : affichage de la phase et du round confirmés par le serveur.
 - `src/App.tsx` : assemblage des vues avec une seule connexion partagée.
 - `vite.config.ts` : proxy HTTP et WebSocket vers le backend.

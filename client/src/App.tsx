@@ -8,7 +8,7 @@ import './App.css'
 
 function App() {
   const { socket, status, probe, ping } = useConnection()
-  const { membership, pending, message, createRoom, joinRoom, leaveRoom } = useRoom(socket)
+  const { membership, pending, message, createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame } = useRoom(socket)
   const connected = status === 'connected'
 
   return (
@@ -19,7 +19,8 @@ function App() {
       </header>
       {message && <p className="room-message" role="alert">{message}</p>}
       {membership ? (
-        <RoomPage membership={membership} busy={pending !== null} connected={connected} leaveRoom={leaveRoom} />
+        <RoomPage membership={membership} busy={pending !== null} connected={connected} leaveRoom={leaveRoom}
+          setReady={setReady} updateSettings={updateSettings} startGame={startGame} />
       ) : (
         <>
           <BrandIntro />

@@ -1,4 +1,4 @@
-# Architecture — étapes 1 et 2
+# Architecture — étapes 1 à 4
 
 ## Socle implémenté
 
@@ -29,6 +29,9 @@ assurée par Socket.IO ; la reprise de l'identité d'un joueur reste différée.
 | Client → serveur | `room:join` | UUID de requête, code et pseudonyme |
 | Client → serveur | `room:leave` | UUID de requête et identifiant du salon |
 | Client → serveur | `room:sync` | UUID de requête ; relire son appartenance actuelle |
+| Client → serveur | `player:ready` | Salon, version des paramètres, booléen Ready |
+| Client → serveur | `room:settings:update` | Salon, version attendue, paramètres complets (Host) |
+| Client → serveur | `game:start` | Salon et version attendue des paramètres (Host) |
 | Serveur → salon | `room:update` | Snapshot public versionné |
 | Serveur → salon | `room:closed` | Identifiant du salon et motif de fermeture |
 
@@ -87,10 +90,53 @@ implémentée. La séparation UUID joueur / connexion permettra de l'introduire
 ultérieurement avec un jeton secret, sans utiliser le code du salon comme preuve
 d'identité. Un redémarrage du serveur perd tous les salons.
 
+## Lobby et lancement
+
+`Player.isReady` est propre au joueur associé à la connexion. `hostPlayerId`
+reste la source unique du rôle Host : aucun booléen Host contrôlable par le
+client. La liste du salon contient uniquement les joueurs encore connectés,
+selon le cycle de déconnexion de l'étape 2.
+
+Les valeurs initiales et limites de `GameSettings` sont des constantes partagées
+dans `shared/src/lobby.ts` ; les schémas Zod côté serveur imposent les limites
+et les types réels. Les payloads restent stricts (pas de champs supplémentaires).
+La projection publique copie paramètres et liste des participants.
+
+`settingsRevision` augmente uniquement lors d'un changement effectif des valeurs.
+Les commandes de lobby portent cette version afin qu'une approbation ancienne ne
+soit pas appliquée après une modification. Changer les paramètres remet tous les
+joueurs « pas prêts ». Enregistrer les mêmes valeurs ou définir le même état Ready
+ne modifie pas la révision du salon. Le cache de requêtes évite de réappliquer une
+ancienne mutation, même si ses effets ont depuis été remplacés.
+
+Le service vérifie appartenance, rôle éventuel du Host, absence de partie lancée
+et version des paramètres avant la mutation. Le lancement exige deux joueurs au
+minimum, tous prêts (Host compris). Il transmet un événement interne `START_GAME`
+au moteur, qui passe de `LOBBY` à `SUBMISSION` avec UUID de partie et de round,
+horodatage serveur et participants initiaux. Une commande de lancement répétée avec le même UUID
+renvoie son accusé précédent ; une nouvelle commande est refusée après lancement.
+
+Depuis l'étape 4, le client affiche la phase et le round issus de `RoomSnapshot.state`.
+Ce contrat remplace l'ancien `room.game` nullable. `StartedGame` a été supprimé
+au profit de l'union discriminée `GameState`. Les timers arriveront à l'étape 5.
+Les joueurs peuvent encore quitter un salon lancé ; les participants initiaux
+restent figés et le départ du Host ferme le salon. Les nouvelles jonctions sont refusées.
+
+`LobbyControls` porte le brouillon des paramètres, recréé quand leur version
+serveur change. Le Host doit enregistrer ses modifications avant Ready ou Start.
+Le client n'anticipe pas les mutations : Ready et lancement sont affichés depuis
+les snapshots serveur. Les trois nouvelles commandes utilisent le même mécanisme
+d'accusés, de cache et de resynchronisation que les commandes de salons.
+
 ## Ajouts différés
 
-Le prochain incrément ajoutera le lobby : rôle Host visible, Ready, paramètres
-et contrôles du lancement. Le moteur de jeu suivra à l'étape 4. Les autres contrats
+Le moteur pur de l'étape 4 est décrit dans [la machine à états](game-state-machine.md).
+Il ne dépend ni de Socket.IO ni de l'horloge système. Il accepte exclusivement des
+événements internes avec version, identité de partie et identité de round attendues.
+L'ordre des soumissions et l'index de révélation restent dans `GameMachine` côté serveur ;
+`projectGameState` expose uniquement les champs publics autorisés.
+
+Le prochain incrément ajoutera la phase de soumission avec timer. Les autres contrats
 métier de la proposition initiale seront introduits au moment où ils deviennent
 nécessaires.
 
@@ -101,7 +147,7 @@ de la phase globale. Le serveur sera l'autorité pour les échéances et les sco
 React Router, Tailwind, Zustand, Motion, Supabase, PostgreSQL et Prisma ne sont
 pas encore installés. Les deux vues sont sélectionnées à partir de l'appartenance
 reçue du serveur, sans navigation par URL à ce stade. Le gâteau est une décoration
-CSS statique, sans mécanique de jeu. Aucune nouvelle dépendance à l'étape 2.
+CSS statique, sans mécanique de jeu. Aucune nouvelle dépendance aux étapes 2 à 4.
 
 ## Références
 
