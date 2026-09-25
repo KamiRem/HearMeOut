@@ -28,3 +28,8 @@ export const updateSettingsSchema = z.strictObject({
   }),
 })
 export const startGameSchema = z.strictObject(lobbyFields)
+
+export const submitSchema = z.strictObject({
+  requestId, roomId: z.uuid(), gameId: z.uuid(), roundId: z.uuid(),
+  choiceId: z.enum(['robot', 'dragon', 'ghost']),
+})

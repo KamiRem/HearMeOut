@@ -13,7 +13,8 @@ interface RoundContext {
 
 export type GameState =
   | { phase: 'LOBBY'; version: number }
-  | (GameContext & RoundContext & { phase: 'SUBMISSION' | 'WAITING' | 'ROUND_RESULTS' })
+  | (GameContext & RoundContext & { phase: 'SUBMISSION'; deadlineAt: number })
+  | (GameContext & RoundContext & { phase: 'WAITING' | 'ROUND_RESULTS' })
   | (GameContext & RoundContext & {
       phase: 'REVEAL' | 'VOTING' | 'SUBMISSION_RESULTS'
       submissionId: string

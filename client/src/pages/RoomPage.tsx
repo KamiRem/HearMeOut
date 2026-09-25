@@ -1,15 +1,19 @@
-import type { RoomMembership } from '@hear-me-out/shared'
+import type { ChoiceId, RoomMembership } from '@hear-me-out/shared'
 import { LobbyControls, type LobbyActions } from '../components/LobbyControls'
 import { GamePhasePanel } from '../components/GamePhasePanel'
+import { SubmissionPanel } from '../components/SubmissionPanel'
+import type { ServerClockSample } from '../hooks/useCountdown'
 
 interface RoomPageProps extends LobbyActions {
   membership: RoomMembership
   busy: boolean
   connected: boolean
   leaveRoom: () => Promise<void> | undefined
+  clockSample: ServerClockSample | null
+  submitChoice: (choiceId: ChoiceId) => Promise<void> | undefined
 }
 
-export function RoomPage({ membership, busy, connected, leaveRoom, setReady, updateSettings, startGame }: RoomPageProps) {
+export function RoomPage({ membership, busy, connected, leaveRoom, setReady, updateSettings, startGame, clockSample, submitChoice }: RoomPageProps) {
   const { room, playerId } = membership
   const isCreator = room.hostPlayerId === playerId
   const inLobby = room.state.phase === 'LOBBY'
@@ -38,8 +42,11 @@ export function RoomPage({ membership, busy, connected, leaveRoom, setReady, upd
         ))}
       </ul>
       {inLobby && room.players.length === 1 && <p className="field-hint">Tu es le premier arrivé. Invites tes potes !</p>}
-      {room.state.phase !== 'LOBBY' ? (
-        <GamePhasePanel state={room.state} />
+      {room.state.phase === 'SUBMISSION' ? (
+        <SubmissionPanel key={room.state.roundId} state={room.state} ownSubmission={membership.ownSubmission}
+          progress={room.submissionProgress} clockSample={clockSample} disabled={busy || !connected} submitChoice={submitChoice} />
+      ) : room.state.phase !== 'LOBBY' ? (
+        <GamePhasePanel state={room.state} submitted={room.submissionProgress?.submitted ?? 0} />
       ) : (
         <LobbyControls key={`${room.id}:${room.settingsRevision}`} membership={membership} disabled={busy || !connected}
           setReady={setReady} updateSettings={updateSettings} startGame={startGame} />

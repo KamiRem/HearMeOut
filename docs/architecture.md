@@ -1,4 +1,4 @@
-# Architecture — étapes 1 à 4
+# Architecture — étapes 1 à 5
 
 ## Socle implémenté
 
@@ -9,7 +9,7 @@ en JavaScript et déclarations TypeScript avant ses consommateurs.
 Fastify et Socket.IO partagent le même serveur HTTP. `app.ts` construit une
 application sans écouter automatiquement ; `index.ts` charge la configuration,
 ouvre le port et gère les signaux d'arrêt. Cette séparation permet les tests
-sur des ports éphémères. Le hook `preClose` ferme les connexions Socket.IO.
+sur des ports éphémères. Le hook `preClose` annule les timers et ferme Socket.IO.
 
 Le navigateur utilise un socket stable créé sans connexion automatique. Un effet
 React gère son ouverture et son nettoyage, y compris sous StrictMode.
@@ -32,7 +32,8 @@ assurée par Socket.IO ; la reprise de l'identité d'un joueur reste différée.
 | Client → serveur | `player:ready` | Salon, version des paramètres, booléen Ready |
 | Client → serveur | `room:settings:update` | Salon, version attendue, paramètres complets (Host) |
 | Client → serveur | `game:start` | Salon et version attendue des paramètres (Host) |
-| Serveur → salon | `room:update` | Snapshot public versionné |
+| Client → serveur | `round:submit` | Salon, partie, round et choix d’exemple |
+| Serveur → salon | `room:update` | Snapshot public versionné et heure serveur |
 | Serveur → salon | `room:closed` | Identifiant du salon et motif de fermeture |
 
 Le temps affiché est la durée aller-retour mesurée dans le navigateur.
@@ -60,7 +61,7 @@ d'adapter cette orchestration et la sérialisation des mutations.
 
 Chaque mutation incrémente la révision. Les snapshots sont construits explicitement
 et ne contiennent ni identifiants de connexion, ni références aux objets internes.
-Créer ou rejoindre renvoie en privé `{ room, playerId }` ; le snapshot du salon
+Créer ou rejoindre renvoie en privé `{ room, playerId, ownSubmission, serverNow }` ; le snapshot du salon
 est diffusé uniquement à ses membres. Une sortie désabonne la connexion. Le départ
 du créateur ferme le salon et libère toutes ses appartenances et abonnements.
 
@@ -118,7 +119,8 @@ renvoie son accusé précédent ; une nouvelle commande est refusée après lanc
 
 Depuis l'étape 4, le client affiche la phase et le round issus de `RoomSnapshot.state`.
 Ce contrat remplace l'ancien `room.game` nullable. `StartedGame` a été supprimé
-au profit de l'union discriminée `GameState`. Les timers arriveront à l'étape 5.
+au profit de l'union discriminée `GameState`. Depuis l’étape 5, `SUBMISSION`
+porte aussi une échéance `deadlineAt`, appliquée par le service et affichée par le client.
 Les joueurs peuvent encore quitter un salon lancé ; les participants initiaux
 restent figés et le départ du Host ferme le salon. Les nouvelles jonctions sont refusées.
 
@@ -136,18 +138,18 @@ Il ne dépend ni de Socket.IO ni de l'horloge système. Il accepte exclusivement
 L'ordre des soumissions et l'index de révélation restent dans `GameMachine` côté serveur ;
 `projectGameState` expose uniquement les champs publics autorisés.
 
-Le prochain incrément ajoutera la phase de soumission avec timer. Les autres contrats
-métier de la proposition initiale seront introduits au moment où ils deviennent
-nécessaires.
+La [phase de soumission avec timer](submission.md) est raccordée : stockage privé
+des choix d’exemple, progression agrégée et accusé personnel, clôture anticipée
+ou à échéance. Les autres contrats métier seront introduits lorsqu’ils deviennent nécessaires.
 
 Les étapes suivantes sépareront les commandes, services métier, moteur de jeu
-et projections publiques. L'attente d'un joueur ayant soumis restera distincte
-de la phase globale. Le serveur sera l'autorité pour les échéances et les scores.
+et projections publiques. L’attente d’un joueur ayant soumis reste distincte
+de la phase globale. Le serveur est l’autorité pour les échéances ; les scores restent à venir.
 
 React Router, Tailwind, Zustand, Motion, Supabase, PostgreSQL et Prisma ne sont
 pas encore installés. Les deux vues sont sélectionnées à partir de l'appartenance
 reçue du serveur, sans navigation par URL à ce stade. Le gâteau est une décoration
-CSS statique, sans mécanique de jeu. Aucune nouvelle dépendance aux étapes 2 à 4.
+CSS statique, sans mécanique de jeu. Aucune nouvelle dépendance aux étapes 2 à 5.
 
 ## Références
 

@@ -23,10 +23,11 @@ export function buildApp({ clientOrigin, logger = false }: AppOptions) {
     service: 'hear-me-out-server',
   }))
 
-  registerHandlers(io)
+  const disposeRooms = registerHandlers(io)
 
   // Close WebSockets before Fastify waits for its HTTP connections to end.
   app.addHook('preClose', async () => {
+    disposeRooms()
     await new Promise<void>((resolve) => io.close(() => resolve()))
   })
 

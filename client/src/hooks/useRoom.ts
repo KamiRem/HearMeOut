@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import type { GameSettings, Result, RoomMembership, RoomSnapshot } from '@hear-me-out/shared'
+import type { ChoiceId, GameSettings, Result, RoomMembership, RoomSnapshot } from '@hear-me-out/shared'
+import type { ServerClockSample } from './useCountdown'
 import type { createSocket } from '../services/socket'
 
 type ClientSocket = ReturnType<typeof createSocket>
-type Action = 'create' | 'join' | 'leave' | 'ready' | 'settings' | 'start'
+type Action = 'create' | 'join' | 'leave' | 'ready' | 'settings' | 'start' | 'submit'
+
+function sampleClock(current: ServerClockSample | null, serverNow: number): ServerClockSample {
+  return current && current.serverNow >= serverNow ? current : { serverNow, receivedAt: performance.now() }
+}
 
 export function useRoom(socket: ClientSocket | null) {
   const [membership, setMembership] = useState<RoomMembership | null>(null)
   const [pending, setPending] = useState<Action | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [clockSample, setClockSample] = useState<ServerClockSample | null>(null)
   const latestRoom = useRef<RoomSnapshot | null>(null)
   const lastClosedRoomId = useRef<string | null>(null)
   const activeSocket = useRef(socket)
@@ -24,6 +30,7 @@ export function useRoom(socket: ClientSocket | null) {
     const latest = latestRoom.current
     const room = latest?.id === next.room.id && latest.revision > next.room.revision ? latest : next.room
     latestRoom.current = room
+    setClockSample((current) => sampleClock(current, next.serverNow))
     setMembership({ ...next, room })
   }
 
@@ -31,11 +38,12 @@ export function useRoom(socket: ClientSocket | null) {
     activeSocket.current = socket
     if (!socket) return
 
-    function onUpdate(room: RoomSnapshot) {
+    function onUpdate(room: RoomSnapshot, serverNow: number) {
       if (lastClosedRoomId.current === room.id) return
       const latest = latestRoom.current
       if (latest?.id === room.id && latest.revision > room.revision) return
       latestRoom.current = room
+      setClockSample((current) => sampleClock(current, serverNow))
       setMembership((current) => current?.room.id === room.id ? { ...current, room } : current)
     }
 
@@ -53,6 +61,7 @@ export function useRoom(socket: ClientSocket | null) {
       latestRoom.current = null
       lastClosedRoomId.current = null
       operation.current = null
+      setClockSample(null)
       setMembership(null)
       setPending(null)
     }
@@ -160,5 +169,14 @@ export function useRoom(socket: ClientSocket | null) {
     }))
   }
 
-  return { membership, pending, message, createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame }
+  function submitChoice(choiceId: ChoiceId) {
+    if (!membership || membership.room.state.phase !== 'SUBMISSION') return
+    const { room } = membership
+    const state = membership.room.state
+    return request('submit', (client) => client.timeout(5000).emitWithAck('round:submit', {
+      requestId: crypto.randomUUID(), roomId: room.id, gameId: state.id, roundId: state.roundId, choiceId,
+    }))
+  }
+
+  return { membership, pending, message, clockSample, createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame, submitChoice }
 }

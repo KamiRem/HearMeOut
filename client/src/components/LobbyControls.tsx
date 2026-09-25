@@ -81,7 +81,7 @@ export function LobbyControls({ membership: { room, playerId }, disabled, setRea
           onClick={() => void setReady(!self?.isReady)}>
           {self?.isReady ? 'Je ne suis plus prêt' : 'Je suis prêt'}
         </button>
-        {isHost && dirty && <p className="field-hint">Enregistre tes modifications avant de te déclarer prêt ou de lancer.</p>}
+        {isHost && dirty && <p className="field-hint">Enregistre tes modifications.</p>}
       </div>
       {isHost ? (
         <div className="start-controls">

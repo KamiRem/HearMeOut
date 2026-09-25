@@ -8,7 +8,7 @@ import { RoomError, RoomService } from '../src/services/roomService.ts'
 
 const start: Extract<GameEvent, { type: 'START_GAME' }> = {
   type: 'START_GAME', expectedVersion: 0, gameId: 'game-1', roundId: 'round-1',
-  startedAt: 1000, totalRounds: 2, participantIds: ['alice', 'bob'],
+  startedAt: 1000, deadlineAt: 16000, totalRounds: 2, participantIds: ['alice', 'bob'],
 }
 
 type RoundAction = RoundEvent extends infer E
@@ -57,14 +57,14 @@ test('full path includes waiting, every reveal, intermediate results and final r
   assert.equal('submissionId' in game.state, false)
   assert.deepEqual(game.revealOrder, [])
   assert.throws(() => step(game, { type: 'END_GAME' }), errorCode('INVALID_TRANSITION'))
-  game = step(game, { type: 'NEXT_ROUND', nextRoundId: 'round-2' })
+  game = step(game, { type: 'NEXT_ROUND', deadlineAt: 31000, nextRoundId: 'round-2' })
   assert.ok(game.state.phase === 'SUBMISSION')
   assert.equal(game.state.roundNumber, 2)
   assert.equal(game.state.roundId, 'round-2')
   game = step(game, { type: 'END_SUBMISSION', submissionIds: ['third'] })
   game = step(game, { type: 'START_REVEALS' })
   game = playSubmission(game)
-  assert.throws(() => step(game, { type: 'NEXT_ROUND', nextRoundId: 'round-3' }), errorCode('INVALID_TRANSITION'))
+  assert.throws(() => step(game, { type: 'NEXT_ROUND', deadlineAt: 31000, nextRoundId: 'round-3' }), errorCode('INVALID_TRANSITION'))
   game = step(game, { type: 'END_GAME' })
   assert.equal(game.state.phase, 'GAME_RESULTS')
   assert.equal('roundId' in game.state, false)
@@ -89,7 +89,7 @@ test('all events outside their permitted phases are rejected without mutation', 
   const voting = step(reveal, { type: 'START_VOTE' })
   const results = step(voting, { type: 'END_VOTE' })
   const roundResults = step(results, { type: 'NEXT_REVEAL' })
-  const lastSubmission = step(roundResults, { type: 'NEXT_ROUND', nextRoundId: 'round-2' })
+  const lastSubmission = step(roundResults, { type: 'NEXT_ROUND', deadlineAt: 31000, nextRoundId: 'round-2' })
   const lastResults = step(lastSubmission, { type: 'END_SUBMISSION', submissionIds: [] })
   const final = step(lastResults, { type: 'END_GAME' })
   const cases: [GameMachine, readonly GameEvent['type'][]][] = [
@@ -100,7 +100,7 @@ test('all events outside their permitted phases are rejected without mutation', 
   const actions: RoundAction[] = [
     { type: 'END_SUBMISSION', submissionIds: [] }, { type: 'START_REVEALS' },
     { type: 'START_VOTE' }, { type: 'END_VOTE' }, { type: 'NEXT_REVEAL' },
-    { type: 'NEXT_ROUND', nextRoundId: 'next-round' }, { type: 'END_GAME' },
+    { type: 'NEXT_ROUND', deadlineAt: 31000, nextRoundId: 'next-round' }, { type: 'END_GAME' },
   ]
   for (const [machine, allowed] of cases) {
     const before = structuredClone(machine)
@@ -120,10 +120,10 @@ test('old versions, other games and previous rounds cannot advance the current s
   const end = scoped(submission, { type: 'END_SUBMISSION', submissionIds: [] })
   const results = transitionGame(submission, end)
   assert.throws(() => transitionGame(results, end), errorCode('STALE_TRANSITION'))
-  const next = step(results, { type: 'NEXT_ROUND', nextRoundId: 'round-2' })
+  const next = step(results, { type: 'NEXT_ROUND', deadlineAt: 31000, nextRoundId: 'round-2' })
   assert.throws(() => transitionGame(next, { ...end, expectedVersion: next.state.version }), errorCode('STALE_TRANSITION'))
   assert.throws(() => transitionGame(next, { ...scoped(next, { type: 'END_SUBMISSION', submissionIds: [] }), gameId: 'old-game' }), errorCode('STALE_TRANSITION'))
-  assert.deepEqual(next, step(results, { type: 'NEXT_ROUND', nextRoundId: 'round-2' }))
+  assert.deepEqual(next, step(results, { type: 'NEXT_ROUND', deadlineAt: 31000, nextRoundId: 'round-2' }))
 })
 
 test('invalid initial context and invalid reveal queues are rejected', () => {
@@ -139,7 +139,7 @@ test('invalid initial context and invalid reveal queues are rejected', () => {
   }
   const results = step(game, { type: 'END_SUBMISSION', submissionIds: [] })
   for (const nextRoundId of ['', 'round-1']) {
-    assert.throws(() => step(results, { type: 'NEXT_ROUND', nextRoundId }), errorCode('INVALID_GAME_DATA'))
+    assert.throws(() => step(results, { type: 'NEXT_ROUND', deadlineAt: 31000, nextRoundId }), errorCode('INVALID_GAME_DATA'))
   }
 })
 

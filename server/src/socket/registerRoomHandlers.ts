@@ -2,7 +2,7 @@ import type { Ack, ClientToServerEvents, Result, RoomClosed, RoomMembership, Ser
 import type { Server, Socket } from 'socket.io'
 import type { z } from 'zod'
 import { RoomError, RoomService, type Departure } from '../services/roomService.ts'
-import { createRoomSchema, joinRoomSchema, leaveRoomSchema, readySchema, startGameSchema, syncRoomSchema, updateSettingsSchema } from './roomSchemas.ts'
+import { createRoomSchema, joinRoomSchema, leaveRoomSchema, readySchema, startGameSchema, submitSchema, syncRoomSchema, updateSettingsSchema } from './roomSchemas.ts'
 
 type RoomServer = Server<ClientToServerEvents, ServerToClientEvents>
 type RoomSocket = Socket<ClientToServerEvents, ServerToClientEvents>
@@ -83,7 +83,7 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
     const channel = `room:${departure.code}`
     if (departure.snapshot) {
       void socket.leave(channel)
-      io.to(channel).emit('room:update', departure.snapshot)
+      io.to(channel).emit('room:update', departure.snapshot, rooms.serverTime())
     } else {
       io.to(channel).emit('room:closed', { roomId: departure.roomId, reason })
       io.in(channel).socketsLeave(channel)
@@ -94,14 +94,14 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
     const membership = rooms.create(socket.id, command.nickname)
     // The MVP uses Socket.IO's synchronous, in-memory adapter on one process.
     void socket.join(`room:${membership.room.code}`)
-    io.to(`room:${membership.room.code}`).emit('room:update', membership.room)
+    io.to(`room:${membership.room.code}`).emit('room:update', membership.room, rooms.serverTime())
     return membership
   }))
 
   socket.on('room:join', (payload, ack) => run('room:join', joinRoomSchema, payload, ack, (command) => {
     const membership = rooms.join(socket.id, command.code, command.nickname)
     void socket.join(`room:${membership.room.code}`)
-    io.to(`room:${membership.room.code}`).emit('room:update', membership.room)
+    io.to(`room:${membership.room.code}`).emit('room:update', membership.room, rooms.serverTime())
     return membership
   }))
 
@@ -113,7 +113,7 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
   socket.on('room:sync', (payload, ack) => run('room:sync', syncRoomSchema, payload, ack, () => rooms.current(socket.id)))
 
   function publishLobby(membership: RoomMembership) {
-    io.to(`room:${membership.room.code}`).emit('room:update', membership.room)
+    io.to(`room:${membership.room.code}`).emit('room:update', membership.room, rooms.serverTime())
     return membership
   }
 
@@ -125,6 +125,9 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
 
   socket.on('game:start', (payload, ack) => run('game:start', startGameSchema, payload, ack, (command) =>
     publishLobby(rooms.startGame(socket.id, command.roomId, command.settingsRevision))))
+
+  socket.on('round:submit', (payload, ack) => run('round:submit', submitSchema, payload, ack, (command) =>
+    publishLobby(rooms.submit(socket.id, command))))
 
   socket.on('disconnect', () => {
     publishDeparture(rooms.leave(socket.id), 'HOST_DISCONNECTED')

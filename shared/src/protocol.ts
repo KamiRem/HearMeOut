@@ -1,5 +1,6 @@
 import type { CreateRoomCommand, JoinRoomCommand, LeaveRoomCommand, RoomClosed, RoomMembership, RoomSnapshot } from './room.ts'
 import type { LobbyCommand, ReadyCommand, UpdateSettingsCommand } from './lobby.ts'
+import type { SubmissionCommand } from './submission.ts'
 
 export interface ServerHello {
   protocolVersion: 1
@@ -28,6 +29,9 @@ export type ErrorCode =
   | 'STALE_SETTINGS'
   | 'NOT_ENOUGH_PLAYERS'
   | 'PLAYERS_NOT_READY'
+  | 'DEADLINE_EXPIRED'
+  | 'ALREADY_SUBMITTED'
+  | 'STALE_ROUND'
 
 export type Result<T> =
   | { ok: true; data: T }
@@ -36,6 +40,7 @@ export type Result<T> =
 export type Ack<T> = (result: Result<T>) => void
 
 export interface ClientToServerEvents {
+  'round:submit': (payload: SubmissionCommand, ack: Ack<RoomMembership>) => void
   'player:ready': (payload: ReadyCommand, ack: Ack<RoomMembership>) => void
   'room:settings:update': (payload: UpdateSettingsCommand, ack: Ack<RoomMembership>) => void
   'game:start': (payload: LobbyCommand, ack: Ack<RoomMembership>) => void
@@ -50,7 +55,7 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
-  'room:update': (room: RoomSnapshot) => void
+  'room:update': (room: RoomSnapshot, serverNow: number) => void
   'room:closed': (event: RoomClosed) => void
   'connection:welcome': (payload: ServerHello) => void
 }

@@ -1,4 +1,4 @@
-# Machine à états — étape 4
+# Machine à états — étapes 4 et 5
 
 Le moteur est dans `server/src/game/gameMachine.ts`. Les types publics `GameState`
 et `GamePhase` sont dans `shared/src/game.ts`. Aucun endpoint ni événement Socket.IO
@@ -23,7 +23,7 @@ stateDiagram-v2
 ```
 
 `WAITING` est l'attente globale du Host après clôture des soumissions. L'attente
-individuelle d'un joueur ayant déjà soumis ne changera pas la phase globale.
+individuelle d’un joueur ayant déjà soumis ne change pas la phase globale.
 `SUBMISSION_RESULTS` distingue la présentation de l'auteur et du score de la
 période de vote ; aucun score n'est encore calculé à cette étape.
 
@@ -42,17 +42,17 @@ snapshot à tous les membres via `room:update`.
 services et timers. Il calcule d'abord la transition, puis remplace la machine et
 incrémente la révision du salon uniquement en cas de succès. Il retourne le
 snapshot public que l'orchestrateur devra diffuser. Il n'est pas enregistré comme
-commande Socket.IO. Les autres transitions sont actuellement exercées par les
-tests uniquement, en attendant le raccordement des fonctionnalités suivantes.
+commande Socket.IO. `END_SUBMISSION` est raccordé aux soumissions et au timer depuis
+l’étape 5. Les transitions suivantes restent exercées par les tests du moteur.
 
-| Événement interne | Responsabilité du futur appelant |
+| Événement interne | Responsabilité de l’appelant |
 | --- | --- |
 | `END_SUBMISSION` | Vérifier l'échéance ou toutes les soumissions, fournir les identifiants validés dans l'ordre de révélation choisi côté serveur |
 | `START_REVEALS` | Vérifier que le demandeur est le Host et membre du salon |
 | `START_VOTE` | Déclencher la fin du délai de révélation côté serveur |
 | `END_VOTE` | Verrouiller les votes et calculer le résultat avant sa publication |
 | `NEXT_REVEAL` | Déclencher la fin de présentation du résultat côté serveur |
-| `NEXT_ROUND` | Créer l'identifiant du round suivant et ses données métier |
+| `NEXT_ROUND` | Créer l’identifiant du round suivant et fournir sa nouvelle échéance `deadlineAt` |
 | `END_GAME` | Préparer le classement général après le dernier round |
 
 Le moteur vérifie la légalité de la transition. La validation des propriétaires
@@ -68,8 +68,8 @@ appelleront ces événements : ce moteur ne remplace pas ces règles métier.
   callback ne peut pas appliquer deux fois une transition.
 - Les événements de round portent aussi `gameId` et `roundId`. Une commande
   d'un ancien round est refusée, même si elle prétend avoir la version actuelle.
-- Les futurs timers devront capturer ces identifiants et cette version lors de
-  leur création, sans les remplacer par l'état courant lors du callback.
+- Le timer de soumission capture l’état à sa création et vérifie qu’il est toujours
+  actif avant la transition. Les futurs timers devront conserver cette protection.
 - Une transition illégale lève `GameTransitionError` sans modifier le salon.
   Les codes distinguent état interdit, événement obsolète et données invalides.
 - Un salon fermé est introuvable pour les callbacks ultérieurs. Le cycle de
@@ -83,18 +83,21 @@ appelleront ces événements : ce moteur ne remplace pas ces règles métier.
 
 Le `GameState` public est une union discriminée par `phase`. Le lobby ne contient
 que la phase et sa version. Les états actifs contiennent le contexte de partie ;
-les phases de round ajoutent son identifiant et son numéro. Seules `REVEAL`,
+les phases de round ajoutent son identifiant et son numéro. `SUBMISSION` ajoute
+son échéance `deadlineAt`, retirée des phases suivantes. Seules `REVEAL`,
 `VOTING` et `SUBMISSION_RESULTS` incluent l'identifiant de la soumission courante.
 
 `revealOrder` et `revealIndex` restent dans le modèle serveur `GameMachine`.
 `projectGameState` construit le contrat public champ par champ : une phase d'attente
 ne révèle aucune soumission future et une révélation n'expose que la soumission
-courante. Aucun auteur, fichier, URL ou vote n'est encore modélisé.
+courante. Les choix et auteurs sont conservés dans `SubmissionRound` côté serveur,
+jamais dans la machine publique. Aucun fichier, URL ou vote n’est encore modélisé.
 
 ## Limites observables de cette étape
 
-Après lancement, les deux clients affichent le round 1 en phase `SUBMISSION`.
-La partie y reste : ni compte à rebours ni bouton artificiel « phase suivante »
-ne sont ajoutés. Les autres phases et les boucles sont validées dans les tests
-du moteur avec des identifiants fictifs. L'étape 5 raccordera le timer de
-soumission ; les uploads, révélations visuelles et votes viendront ensuite.
+Après lancement, les clients affichent le round 1 en phase `SUBMISSION` avec un
+compte à rebours et des choix d’exemple. La validation de tous les joueurs ou
+l’échéance clôture cette phase. La partie reste ensuite à `WAITING`, ou à
+`ROUND_RESULTS` si aucun choix n’a été validé. Voir [la soumission](submission.md).
+Les uploads, révélations visuelles, votes et enchaînements de rounds viendront
+aux étapes suivantes ; ces dernières transitions restent testées dans le moteur.

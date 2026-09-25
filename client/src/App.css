@@ -140,6 +140,24 @@ button.secondary-button:hover:not(:disabled) { background: #efe7dc; }
 .ready-button.is-ready:hover:not(:disabled) { background: #c4decb; }
 .start-game { justify-content: center; }
 .game-launched { background: #eef4ee; border: 1px solid #b8d5be; padding: 20px; border-radius: 12px; }
+.submission-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.submission-timer { padding: 8px 12px; border-radius: 8px; background: #dcebe0; color: #225f46; font: 700 22px ui-monospace, monospace; }
+.submission-timer.is-urgent { background: #fbe0ce; color: #89341a; }
+.submission-progress { font-size: 13px; font-weight: 700; color: #225f46; }
+.choice-fieldset { border: 0; padding: 0; margin: 24px 0; min-width: 0; }
+.choice-fieldset legend { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+.choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+form .choice-card { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 6px; margin: 0; border: 2px solid #d7dfd4; border-radius: 12px; background: #fffdf9; text-align: center; cursor: pointer; }
+.choice-card.is-selected { border-color: #256b59; background: #dcebe0; }
+.choice-card:focus-within { outline: 2px solid #256b59; outline-offset: 3px; }
+.choice-card input { width: 16px; height: 16px; margin: 0; accent-color: #256b59; }
+.choice-symbol { font-size: clamp(28px, 6vw, 42px); }
+.choice-summary { font-size: 13px; line-height: 1.7; }
+.choice-fieldset:disabled .choice-card { opacity: .65; cursor: default; }
+.submission-panel .primary-button { justify-content: center; }
+.submission-waiting { display: grid; justify-items: center; gap: 12px; padding: 20px 0; text-align: center; }
+.submission-waiting p { margin: 0; }
+.choice-preview { font-size: 64px; }
 @media (max-width: 540px) {
   .settings-grid, .settings-summary { grid-template-columns: 1fr; gap: 12px; }
   .player-list li { gap: 8px; }

@@ -20,7 +20,7 @@ export type RoundEvent = RoundCommand & (
   | { type: 'START_VOTE' }
   | { type: 'END_VOTE' }
   | { type: 'NEXT_REVEAL' }
-  | { type: 'NEXT_ROUND'; nextRoundId: string }
+  | { type: 'NEXT_ROUND'; nextRoundId: string; deadlineAt: number }
   | { type: 'END_GAME' }
 )
 
@@ -30,6 +30,7 @@ export type GameEvent = RoundEvent | {
   gameId: string
   roundId: string
   startedAt: number
+  deadlineAt: number
   totalRounds: number
   participantIds: readonly string[]
 }
@@ -66,6 +67,7 @@ export function transitionGame(machine: GameMachine, event: GameEvent): GameMach
   if (event.type === 'START_GAME' && state.phase === 'LOBBY') {
     requireData(validId(event.gameId) && validId(event.roundId)
       && Number.isSafeInteger(event.startedAt) && event.startedAt >= 0
+      && Number.isSafeInteger(event.deadlineAt) && event.deadlineAt > event.startedAt
       && Number.isInteger(event.totalRounds)
       && event.totalRounds >= GAME_SETTINGS_LIMITS.rounds.min && event.totalRounds <= GAME_SETTINGS_LIMITS.rounds.max
       && event.participantIds.length >= MIN_PLAYERS && event.participantIds.every(validId)
@@ -74,7 +76,7 @@ export function transitionGame(machine: GameMachine, event: GameEvent): GameMach
       state: {
         phase: 'SUBMISSION', version, id: event.gameId, startedAt: event.startedAt,
         participantIds: [...event.participantIds], totalRounds: event.totalRounds,
-        roundId: event.roundId, roundNumber: 1,
+        roundId: event.roundId, roundNumber: 1, deadlineAt: event.deadlineAt,
       },
       revealOrder: [], revealIndex: -1,
     }
@@ -131,9 +133,10 @@ export function transitionGame(machine: GameMachine, event: GameEvent): GameMach
         break
       case 'NEXT_ROUND':
         if (state.phase === 'ROUND_RESULTS' && state.roundNumber < state.totalRounds) {
-          requireData(validId(event.nextRoundId) && event.nextRoundId !== state.roundId)
+          requireData(validId(event.nextRoundId) && event.nextRoundId !== state.roundId
+            && Number.isSafeInteger(event.deadlineAt) && event.deadlineAt > state.startedAt)
           return {
-            state: { ...context, phase: 'SUBMISSION', roundId: event.nextRoundId, roundNumber: state.roundNumber + 1 },
+            state: { ...context, phase: 'SUBMISSION', roundId: event.nextRoundId, roundNumber: state.roundNumber + 1, deadlineAt: event.deadlineAt },
             revealOrder: [], revealIndex: -1,
           }
         }
@@ -164,7 +167,9 @@ export function projectGameState({ state }: GameMachine): GameState {
   if (state.phase === 'GAME_RESULTS') return { ...context, phase: 'GAME_RESULTS' }
   const round = { ...context, roundId: state.roundId, roundNumber: state.roundNumber }
   switch (state.phase) {
-    case 'SUBMISSION': case 'WAITING': case 'ROUND_RESULTS':
+    case 'SUBMISSION':
+      return { ...round, phase: state.phase, deadlineAt: state.deadlineAt }
+    case 'WAITING': case 'ROUND_RESULTS':
       return { ...round, phase: state.phase }
     case 'REVEAL': case 'VOTING': case 'SUBMISSION_RESULTS':
       return { ...round, phase: state.phase, submissionId: state.submissionId }

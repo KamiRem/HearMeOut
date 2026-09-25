@@ -1,10 +1,11 @@
 # Hear Me Out Cake
 
-Application multijoueur développée par étapes. Les étapes 1 à 4 fournissent le
+Application multijoueur développée par étapes. Les étapes 1 à 5 fournissent le
 monorepo, la connexion Socket.IO typée et les salons privés : création, jonction,
 départ et liste des joueurs synchronisée, puis le lobby avec Host, Ready,
-paramètres et lancement, ainsi que la machine à états côté serveur. Les timers,
-les soumissions, les votes, les scores et les comptes ne sont pas encore implémentés.
+paramètres et lancement, la machine à états et la soumission avec timer serveur.
+Les choix sont provisoirement des exemples intégrés ; l’upload d’images vient à
+l’étape 6. Les révélations, votes, scores et comptes ne sont pas encore implémentés.
 
 ## Démarrer
 
@@ -108,9 +109,25 @@ nécessaire à cette étape. Les fichiers `.env` sont ignorés par Git.
    chez l'invité, et tous les joueurs repassent « pas prêts ».
 4. Se déclarer prêt de nouveau puis lancer depuis le Host. Les deux onglets
    affichent « Choix du Hear Me Out », round 1 sur le nombre configuré. Ready,
-   paramètres et nouvelles jonctions sont verrouillés. Le jeu reste en phase
-   `SUBMISSION` : il n'y a pas encore de compte à rebours ou d'upload à cette étape.
+   paramètres et nouvelles jonctions sont verrouillés. Le compte à rebours démarre
+   avec la durée de choix configurée par le Host.
 5. Le départ reste possible. Quitter en tant que Host ferme toujours le salon.
+
+## Vérifier la soumission
+
+1. Choisir une durée de 15 secondes dans le lobby pour un test rapide, puis lancer
+   avec deux joueurs prêts. Les deux onglets affichent le compte à rebours.
+2. Sélectionner un choix d’exemple, puis « Valider mon Hear Me Out ». Le choix est
+   verrouillé et « En attente des autres joueurs… » apparaît. L’autre onglet voit
+   uniquement le compteur de choix validés, sans connaître le choix de son voisin.
+3. Valider le second choix avant la fin du délai : les deux onglets passent à
+   « En attente des révélations ». Le timer est annulé côté serveur.
+4. Recréer un salon et ne valider qu’un choix : au bout des 15 secondes, les deux
+   onglets passent également à l’attente des révélations. Aucun retardataire ne
+   peut ajouter de choix après l’échéance.
+5. Sans aucun choix validé, le serveur passe aux résultats du round vide.
+   La progression s’arrête là pour cette version : révélations à l’étape 7,
+   enchaînement des rounds à l’étape 9.
 
 ## Règles et limites actuelles
 
@@ -131,6 +148,12 @@ nécessaire à cette étape. Les fichiers `.env` sont ignorés par Git.
   initialise `SUBMISSION` au round 1 avec un identifiant de round généré côté serveur.
 - Après lancement, personne ne peut rejoindre, modifier les paramètres, changer
   son état Ready ou lancer une seconde fois. Les départs restent possibles.
+- La soumission se termine quand tous les joueurs attendus ont validé ou à
+  l’échéance serveur. Le compte à rebours du navigateur est indicatif : le serveur
+  vérifie l’heure à chaque validation, même si son callback de timer est retardé.
+- Un joueur qui part sans soumettre est retiré des joueurs attendus. Son choix
+  reste enregistré s’il avait déjà validé. Le départ du Host annule le timer et
+  ferme le salon. Un nouveau round réinitialise les choix et les joueurs attendus.
 - Un rafraîchissement ou une déconnexion retire le joueur lorsque le serveur détecte
   la coupure. Si c'est le créateur, le salon est fermé. La reconnexion du transport
   est automatique, mais il faut rejoindre manuellement avec un nouveau joueur
@@ -149,10 +172,12 @@ couvrent aussi les permissions du Host, les valeurs des paramètres, la remise
 à zéro des états prêt, les commandes sur d'anciens paramètres, les conditions
 du lancement et son verrouillage. Le moteur est testé sur toutes ses phases,
 les boucles de rounds, les événements obsolètes et la confidentialité de l'ordre
-des révélations. Ces scénarios utilisent des événements internes et des identifiants
-fictifs, sans simuler une partie jouable dans l'interface.
+des révélations. Les tests de soumission couvrent aussi les échéances avec horloge
+contrôlée, les choix verrouillés, les départs, les callbacks obsolètes, la fermeture
+des timers et la validation via Socket.IO. Les phases suivantes restent exercées
+par des événements internes dans les tests du moteur.
 
 Voir [la machine à états](docs/game-state-machine.md) pour le graphe des transitions
-et les limites de l'étape 4. La prochaine étape ajoutera la soumission et son timer.
+et [la soumission](docs/submission.md) pour les règles et limites de l’étape 5.
 
 Voir [les conventions](docs/conventions.md) et [l'architecture](docs/architecture.md).

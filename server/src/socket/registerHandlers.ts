@@ -7,7 +7,9 @@ import { registerRoomHandlers } from './registerRoomHandlers.ts'
 const pingSchema = z.strictObject({ requestId: z.uuid() })
 
 export function registerHandlers(io: Server<ClientToServerEvents, ServerToClientEvents>) {
-  const rooms = new RoomService()
+  const rooms = new RoomService({
+    onRoomUpdate: (room, serverNow) => io.to(`room:${room.code}`).emit('room:update', room, serverNow),
+  })
   io.on('connection', (socket) => {
     registerRoomHandlers(io, socket, rooms)
     socket.emit('connection:welcome', { protocolVersion: 1, serverNow: Date.now() })
@@ -25,4 +27,5 @@ export function registerHandlers(io: Server<ClientToServerEvents, ServerToClient
       ack({ ok: true, data: { requestId: result.data.requestId, serverNow: Date.now() } })
     })
   })
+  return () => rooms.dispose()
 }
