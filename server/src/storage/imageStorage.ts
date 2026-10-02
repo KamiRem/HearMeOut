@@ -1,5 +1,6 @@
 export interface ImageStorage {
   put(objectKey: string, data: Buffer): Promise<string>
+  sign(objectKey: string): Promise<string>
   remove(objectKey: string): Promise<void>
 }
 
@@ -45,6 +46,11 @@ export class SupabaseImageStorage implements ImageStorage {
       method: 'POST', headers: { 'Content-Type': 'image/webp', 'x-upsert': 'false', 'Cache-Control': 'no-store' },
       body: new Uint8Array(data),
     })
+    return this.sign(objectKey)
+  }
+
+  async sign(objectKey: string) {
+    const path = `${encodeURIComponent(this.options.bucket)}/${objectKey.split('/').map(encodeURIComponent).join('/')}`
     const signed: unknown = await (await this.call(`/object/sign/${path}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expiresIn: 3600 }),
     })).json()

@@ -60,7 +60,8 @@ il affiche le choix verrouillé et l’attente individuelle ; la phase du salon
 reste `SUBMISSION` jusqu’à sa clôture. À zéro, les actions sont désactivées et le
 client attend le snapshot serveur. Un nouveau round recrée ce composant.
 
-Cette version s’arrête après les soumissions : aucun gâteau interactif,
-vote ou enchaînement automatique des rounds. La [reprise de session](navigation.md)
+Depuis l’étape 7, les soumissions sont suivies du [gâteau et des révélations](reveals.md)
+commandées par le Host. Les votes et l’enchaînement automatique des rounds restent
+à venir. La [reprise de session](navigation.md)
 conserve désormais la place et l’image validée pendant 60 secondes après une
 déconnexion détectée ; le délai de soumission continue à s’écouler.

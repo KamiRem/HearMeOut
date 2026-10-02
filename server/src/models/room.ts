@@ -34,4 +34,5 @@ export interface SubmissionRound {
   id: string
   expectedPlayerIds: Set<string>
   submissions: Map<string, Submission>
+  revealedIds: string[]
 }

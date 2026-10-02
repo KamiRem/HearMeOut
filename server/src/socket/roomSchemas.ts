@@ -33,3 +33,8 @@ export const startGameSchema = z.strictObject(lobbyFields)
 export const prepareImageSchema = z.strictObject({
   requestId, roomId: z.uuid(), gameId: z.uuid(), roundId: z.uuid(),
 })
+
+export const revealSchema = z.strictObject({
+  requestId, roomId: z.uuid(), gameId: z.uuid(), roundId: z.uuid(),
+  expectedVersion: z.number().int().nonnegative(),
+})

@@ -2,7 +2,7 @@ import type { Ack, ClientToServerEvents, Result, RoomClosed, RoomMembership, Ser
 import type { Server, Socket } from 'socket.io'
 import type { z } from 'zod'
 import { RoomError, RoomService, type Departure } from '../services/roomService.ts'
-import { createRoomSchema, joinRoomSchema, leaveRoomSchema, readySchema, startGameSchema, prepareImageSchema, syncRoomSchema, resumeRoomSchema, updateSettingsSchema } from './roomSchemas.ts'
+import { createRoomSchema, joinRoomSchema, leaveRoomSchema, readySchema, startGameSchema, prepareImageSchema, revealSchema, syncRoomSchema, resumeRoomSchema, updateSettingsSchema } from './roomSchemas.ts'
 import type { ImageUploadService } from '../services/imageUploadService.ts'
 
 type RoomServer = Server<ClientToServerEvents, ServerToClientEvents>
@@ -16,11 +16,12 @@ interface CachedRequest {
 export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: RoomService, uploads: ImageUploadService) {
   // These bounded, connection-local caches are discarded on disconnect.
   const requests = new Map<string, CachedRequest>()
+  const pending = new Map<string, { fingerprint: string; work: Promise<CachedRequest> }>()
   let windowStartedAt = Date.now()
   let requestCount = 0
 
   function run<P extends { requestId: string }, T>(
-    event: string, schema: z.ZodType<P>, payload: unknown, ack: Ack<T>, action: (command: P) => T,
+    event: string, schema: z.ZodType<P>, payload: unknown, ack: Ack<T>, action: (command: P) => T | Promise<T>,
   ) {
     if (typeof ack !== 'function') return
     if (Date.now() - windowStartedAt >= 10_000) {
@@ -41,8 +42,7 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
     }
     const command = parsed.data
     const fingerprint = `${event}:${JSON.stringify(command)}`
-    const cached = requests.get(command.requestId)
-    if (cached) {
+    function replyCached(cached: CachedRequest) {
       if (cached.fingerprint !== fingerprint) {
         ack({ ok: false, error: { code: 'REQUEST_CONFLICT', message: 'Cette demande a déjà été utilisée.' } })
       } else if (cached.membershipRoomId && rooms.current(socket.id)?.room.id !== cached.membershipRoomId) {
@@ -51,32 +51,57 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
         // Matching event and normalized payload guarantee the cached result type.
         ack(cached.result as Result<T>)
       }
+    }
+    const cached = requests.get(command.requestId)
+    if (cached) {
+      replyCached(cached)
+      return
+    }
+    const running = pending.get(command.requestId)
+    if (running) {
+      if (running.fingerprint !== fingerprint) {
+        ack({ ok: false, error: { code: 'REQUEST_CONFLICT', message: 'Cette demande a déjà été utilisée.' } })
+      } else {
+        void running.work.then(replyCached)
+      }
+      return
+    }
+    if (pending.size >= 40) {
+      ack({ ok: false, error: { code: 'RATE_LIMITED', message: 'Trop de demandes en cours. Patiente quelques secondes.' } })
       return
     }
 
-    let result: Result<T>
-    try {
-      result = { ok: true, data: action(command) }
-    } catch (error) {
-      if (!(error instanceof RoomError)) console.error('Room command failed', error)
-      result = { ok: false, error: error instanceof RoomError
-        ? { code: error.code, message: error.message }
-        : { code: 'INTERNAL_ERROR', message: 'Une erreur est survenue. Réessaie.' } }
-    }
-
-    // Synchronization is a fresh read, never a replay of a past snapshot.
-    if (event !== 'room:sync') {
-      if (requests.size >= 100) {
-        const oldest = requests.keys().next().value
-        if (oldest !== undefined) requests.delete(oldest)
+    const work = Promise.resolve().then(async (): Promise<CachedRequest> => {
+      let result: Result<T>
+      let membershipRoomId: string | undefined
+      try {
+        if (!socket.connected) throw new RoomError('NOT_A_MEMBER', 'La connexion a été interrompue.')
+        const outcome = action(command)
+        membershipRoomId = rooms.current(socket.id)?.room.id
+        result = { ok: true, data: await outcome }
+      } catch (error) {
+        if (!(error instanceof RoomError)) console.error('Room command failed', error)
+        result = { ok: false, error: error instanceof RoomError
+          ? { code: error.code, message: error.message }
+          : { code: 'INTERNAL_ERROR', message: 'Une erreur est survenue. Réessaie.' } }
       }
-      requests.set(command.requestId, {
+      const entry = {
         fingerprint, result,
-        membershipRoomId: result.ok && event !== 'room:leave'
-          ? rooms.current(socket.id)?.room.id : undefined,
-      })
-    }
-    ack(result)
+        membershipRoomId: result.ok && event !== 'room:leave' ? membershipRoomId : undefined,
+      }
+      // Synchronization is a fresh read, never a replay of a past snapshot.
+      if (event !== 'room:sync' && socket.connected) {
+        if (requests.size >= 100) {
+          const oldest = requests.keys().next().value
+          if (oldest !== undefined) requests.delete(oldest)
+        }
+        requests.set(command.requestId, entry)
+      }
+      pending.delete(command.requestId)
+      return entry
+    })
+    pending.set(command.requestId, { fingerprint, work })
+    void work.then(replyCached)
   }
 
   function publishDeparture(departure: Departure | null, reason: RoomClosed['reason']) {
@@ -141,8 +166,15 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
   socket.on('image:prepare', (payload, ack) => run('image:prepare', prepareImageSchema, payload, ack, (command) =>
     uploads.prepare(socket.id, command)))
 
+  socket.on('reveal:start', (payload, ack) => run('reveal:start', revealSchema, payload, ack, (command) =>
+    rooms.reveal(socket.id, command, 'start')))
+
+  socket.on('reveal:next', (payload, ack) => run('reveal:next', revealSchema, payload, ack, (command) =>
+    rooms.reveal(socket.id, command, 'next')))
+
   socket.on('disconnect', () => {
     rooms.disconnect(socket.id)
     requests.clear()
+    pending.clear()
   })
 }

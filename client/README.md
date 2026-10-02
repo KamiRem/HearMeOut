@@ -20,6 +20,8 @@ avec `npm run dev -w @hear-me-out/client`. Le backend doit tourner séparément.
 - `src/components/GamePhasePanel.tsx` : affichage de la phase et du round confirmés par le serveur.
 - `src/components/SubmissionPanel.tsx` : choix provisoire, validation, compte à rebours et attente individuelle.
 - `src/components/ImagePicker.tsx` : fichier ou glisser-déposer, contrôles locaux, aperçu et libération des URL Blob.
+- `src/components/RevealPanel.tsx` : images révélées et progression par le Host.
+- `src/components/RevealCake.tsx` : gâteau partagé, pics animés et images agrandissables.
 - `src/App.tsx` : assemblage des vues avec une seule connexion partagée.
 - `vite.config.ts` : proxy HTTP et WebSocket vers le backend.
 

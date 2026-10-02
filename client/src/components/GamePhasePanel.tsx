@@ -11,17 +11,13 @@ const labels: Record<GamePhase, string> = {
   GAME_RESULTS: 'Résultats de la partie',
 }
 
-export function GamePhasePanel({ state, submitted }: { state: Exclude<GameState, { phase: 'LOBBY' | 'SUBMISSION' }>; submitted: number }) {
+export function GamePhasePanel({ state }: { state: Exclude<GameState, { phase: 'LOBBY' | 'SUBMISSION' }> }) {
   return (
-    <section className="game-launched" aria-labelledby="phase-title" aria-live="polite">
-      <p className="eyebrow">{'roundNumber' in state ? `Round ${state.roundNumber} / ${state.totalRounds}` : 'Partie terminée'}</p>
-      <h2 id="phase-title">{labels[state.phase]}</h2>
-      <p className="field-hint">
-        {state.phase === 'WAITING'
-          ? `${submitted} choix validé${submitted > 1 ? 's' : ''}. Les soumissions sont fermées. Le gâteau et les révélations arrivent à l’étape 7.`
-          : state.phase === 'ROUND_RESULTS' && submitted === 0
-            ? 'Temps écoulé : aucun choix validé pour ce round. La suite des rounds arrive à l’étape 9.'
-            : 'Cette phase est synchronisée avec les autres joueurs. Son écran de jeu sera disponible dans une prochaine version.'}
+    <section className="card mx-auto w-full max-w-2xl border border-base-content/10 bg-base-200 p-8 text-center" aria-labelledby="phase-title" aria-live="polite">
+      <p className="mb-4 text-xs font-bold tracking-widest text-primary uppercase">{'roundNumber' in state ? `Round ${state.roundNumber} / ${state.totalRounds}` : 'Partie terminée'}</p>
+      <h1 id="phase-title" className="text-3xl font-black">{labels[state.phase]}</h1>
+      <p className="mt-4 text-sm text-base-content/75">
+        Cette phase est synchronisée avec les autres joueurs. Son écran sera disponible dans une prochaine version.
       </p>
     </section>
   )

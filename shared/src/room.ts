@@ -1,6 +1,7 @@
 import type { GameSettings } from './lobby.ts'
 import type { GameState } from './game.ts'
 import type { OwnSubmission, SubmissionProgress } from './submission.ts'
+import type { RevealedSubmission } from './reveal.ts'
 
 export interface Player {
   id: string
@@ -20,6 +21,7 @@ export interface RoomSnapshot {
   settingsRevision: number
   state: GameState
   submissionProgress: SubmissionProgress | null
+  revealedSubmissions: RevealedSubmission[]
 }
 
 export interface RoomMembership {

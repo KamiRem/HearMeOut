@@ -1,4 +1,4 @@
-# Machine à états — étapes 4 et 5
+# Machine à états — étapes 4 à 7
 
 Le moteur est dans `server/src/game/gameMachine.ts`. Les types publics `GameState`
 et `GamePhase` sont dans `shared/src/game.ts`. Aucun endpoint ni événement Socket.IO
@@ -13,6 +13,8 @@ stateDiagram-v2
     SUBMISSION --> WAITING: END_SUBMISSION / au moins une soumission
     SUBMISSION --> ROUND_RESULTS: END_SUBMISSION / aucune soumission
     WAITING --> REVEAL: START_REVEALS
+    REVEAL --> REVEAL: NEXT_REVEAL / étape 7, image suivante
+    REVEAL --> ROUND_RESULTS: NEXT_REVEAL / étape 7, dernière image
     REVEAL --> VOTING: START_VOTE
     VOTING --> SUBMISSION_RESULTS: END_VOTE
     SUBMISSION_RESULTS --> REVEAL: NEXT_REVEAL / image suivante
@@ -43,7 +45,8 @@ services et timers. Il calcule d'abord la transition, puis remplace la machine e
 incrémente la révision du salon uniquement en cas de succès. Il retourne le
 snapshot public que l'orchestrateur devra diffuser. Il n'est pas enregistré comme
 commande Socket.IO. `END_SUBMISSION` est raccordé aux soumissions et au timer depuis
-l’étape 5. Les transitions suivantes restent exercées par les tests du moteur.
+l’étape 5. `START_REVEALS` et `NEXT_REVEAL` sont raccordés aux commandes du Host
+depuis l’étape 7 ; les votes et les rounds suivants restent testés dans le moteur.
 
 | Événement interne | Responsabilité de l’appelant |
 | --- | --- |
@@ -51,7 +54,7 @@ l’étape 5. Les transitions suivantes restent exercées par les tests du moteu
 | `START_REVEALS` | Vérifier que le demandeur est le Host et membre du salon |
 | `START_VOTE` | Déclencher la fin du délai de révélation côté serveur |
 | `END_VOTE` | Verrouiller les votes et calculer le résultat avant sa publication |
-| `NEXT_REVEAL` | Déclencher la fin de présentation du résultat côté serveur |
+| `NEXT_REVEAL` | Étape 7 : vérifier le Host et renouveler le lien de l’image suivante ; après intégration des votes : terminer la présentation du résultat |
 | `NEXT_ROUND` | Créer l’identifiant du round suivant et fournir sa nouvelle échéance `deadlineAt` |
 | `END_GAME` | Préparer le classement général après le dernier round |
 
@@ -89,8 +92,9 @@ son échéance `deadlineAt`, retirée des phases suivantes. Seules `REVEAL`,
 
 `revealOrder` et `revealIndex` restent dans le modèle serveur `GameMachine`.
 `projectGameState` construit le contrat public champ par champ : une phase d'attente
-ne révèle aucune soumission future et une révélation n'expose que la soumission
-courante. Les choix et auteurs sont conservés dans `SubmissionRound` côté serveur,
+ne révèle aucune soumission future et l’état de révélation désigne la soumission
+courante. `RoomSnapshot.revealedSubmissions` ajoute les images déjà révélées pour
+conserver le gâteau. Les choix et auteurs sont conservés dans `SubmissionRound` côté serveur,
 jamais dans la machine publique. La référence de l’image stockée appartient à la
 soumission privée ; aucun vote n’est encore modélisé.
 
@@ -98,7 +102,8 @@ soumission privée ; aucun vote n’est encore modélisé.
 
 Après lancement, les clients affichent le round 1 en phase `SUBMISSION` avec un
 compte à rebours et un sélecteur d’image. La validation de tous les joueurs ou
-l’échéance clôture cette phase. La partie reste ensuite à `WAITING`, ou à
+l’échéance clôture cette phase. La partie passe ensuite à `WAITING`, ou à
 `ROUND_RESULTS` si aucun choix n’a été validé. Voir [la soumission](submission.md).
-L’upload est raccordé depuis l’étape 6. Les révélations visuelles, votes et enchaînements de rounds viendront
-aux étapes suivantes ; ces dernières transitions restent testées dans le moteur.
+Le Host révèle les images une par une jusqu’à `ROUND_RESULTS`, sans vote ni score.
+Voir [les révélations](reveals.md). Les votes et l’enchaînement des rounds seront
+raccordés aux étapes 8 et 9.

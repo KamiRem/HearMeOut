@@ -29,6 +29,7 @@ export function buildApp({ clientOrigin, logger = false, imageStorage }: AppOpti
   }))
 
   const rooms = new RoomService({
+    signImage: imageStorage ? (objectKey) => imageStorage.sign(objectKey) : undefined,
     onRoomUpdate: (room, serverNow) => io.to(`room:${room.code}`).emit('room:update', room, serverNow),
     onDiscardImage: (objectKey) => uploads.discard(objectKey),
     onSessionExpired: (departure) => {

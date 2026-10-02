@@ -1,11 +1,12 @@
 # Hear Me Out Cake
 
-Application multijoueur développée par étapes. Les étapes 1 à 6 fournissent le
+Application multijoueur développée par étapes. Les étapes 1 à 7 fournissent le
 monorepo, la connexion Socket.IO typée et les salons privés : création, jonction,
 départ et liste des joueurs synchronisée, puis le lobby avec Host, Ready,
 paramètres et lancement, la machine à états et la soumission avec timer serveur.
 Les joueurs peuvent sélectionner et envoyer leurs images dans Supabase Storage.
-Les révélations, votes, scores et comptes ne sont pas encore implémentés.
+Le Host peut révéler les images une par une sur un gâteau synchronisé, sans auteur.
+Les votes, scores et comptes ne sont pas encore implémentés.
 Le lobby (`/room/:roomCode`) et la partie (`/game/:roomCode`) ont désormais des
 pages séparées. La redirection suit l’état serveur chez tous les joueurs.
 Voir [navigation et reprise de session](docs/navigation.md).
@@ -127,13 +128,26 @@ privé. La clé reste exclusivement côté serveur. Les fichiers `.env` sont ign
    choix est verrouillé et « En attente des autres joueurs… » apparaît. L’autre
    onglet voit uniquement le compteur de choix validés, sans connaître l’image.
 3. Valider le second choix avant la fin du délai : les deux onglets passent à
-   « En attente des révélations ». Le timer est annulé côté serveur.
+   un gâteau vide (« Le gâteau attend vos secrets »). Le timer est annulé côté serveur.
 4. Recréer un salon et ne valider qu’un choix : au bout des 15 secondes, les deux
    onglets passent également à l’attente des révélations. Aucun retardataire ne
    peut ajouter de choix après l’échéance.
 5. Sans aucun choix validé, le serveur passe aux résultats du round vide.
-   La progression s’arrête là pour cette version : révélations à l’étape 7,
-   enchaînement des rounds à l’étape 9.
+   L’enchaînement des rounds sera raccordé à l’étape 9.
+
+## Vérifier les révélations
+
+1. Valider les choix de deux joueurs : le gâteau est vide dans les deux onglets.
+2. Seul le Host voit « Commencer les révélations ». Un clic révèle la même image
+   chez tous les joueurs, sur un pic animé. Aucun auteur n’est indiqué.
+3. Cliquer sur une image pour l’agrandir ; fermer avec le bouton ou Échap.
+4. Recharger un onglet : le gâteau et le rôle Host sont restaurés.
+5. Le Host clique « Révéler l’image suivante ». Les images précédentes restent
+   sur le gâteau. « Terminer les révélations » passe aux résultats du round.
+6. Tester également un seul choix reçu avant l’échéance, puis aucun choix.
+
+À cette étape, le Host avance manuellement et aucune note n’est calculée.
+Les votes viendront à l’étape 8. Voir [les révélations](docs/reveals.md).
 
 ## Règles et limites actuelles
 
@@ -180,8 +194,10 @@ du lancement et son verrouillage. Le moteur est testé sur toutes ses phases,
 les boucles de rounds, les événements obsolètes et la confidentialité de l'ordre
 des révélations. Les tests de soumission couvrent aussi les échéances avec horloge
 contrôlée, les choix verrouillés, les départs, les callbacks obsolètes, la fermeture
-des timers et la validation via Socket.IO. Les phases suivantes restent exercées
-par des événements internes dans les tests du moteur.
+des timers et la validation via Socket.IO. Les révélations sont testées sur leurs
+permissions, la confidentialité, les doublons simultanés, les erreurs de stockage,
+les départs pendant la signature et la reprise de session. Les votes et les rounds
+suivants restent exercés par des événements internes dans les tests du moteur.
 
 Voir [la machine à états](docs/game-state-machine.md) pour le graphe des transitions
 et [la soumission](docs/submission.md) pour les règles du timer. Le [guide des images](docs/image-upload.md)

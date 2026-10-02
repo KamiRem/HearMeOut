@@ -1,6 +1,7 @@
 import type { CreateRoomCommand, JoinRoomCommand, LeaveRoomCommand, RoomClosed, RoomMembership, RoomSnapshot } from './room.ts'
 import type { LobbyCommand, ReadyCommand, UpdateSettingsCommand } from './lobby.ts'
 import type { PrepareImageCommand, ImageUploadTicket } from './submission.ts'
+import type { RevealCommand } from './reveal.ts'
 
 export interface ServerHello {
   protocolVersion: 1
@@ -47,6 +48,8 @@ export type Result<T> =
 export type Ack<T> = (result: Result<T>) => void
 
 export interface ClientToServerEvents {
+  'reveal:start': (payload: RevealCommand, ack: Ack<RoomMembership>) => void
+  'reveal:next': (payload: RevealCommand, ack: Ack<RoomMembership>) => void
   'room:resume': (payload: { requestId: string; sessionToken: string }, ack: Ack<RoomMembership>) => void
   'image:prepare': (payload: PrepareImageCommand, ack: Ack<ImageUploadTicket>) => void
   'player:ready': (payload: ReadyCommand, ack: Ack<RoomMembership>) => void

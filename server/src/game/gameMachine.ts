@@ -123,7 +123,8 @@ export function transitionGame(machine: GameMachine, event: GameEvent): GameMach
         }
         break
       case 'NEXT_REVEAL':
-        if (state.phase === 'SUBMISSION_RESULTS') {
+        // Step 7: manual progression from REVEAL until voting is connected in step 8.
+        if (state.phase === 'SUBMISSION_RESULTS' || state.phase === 'REVEAL') {
           const revealIndex = machine.revealIndex + 1
           const submissionId = machine.revealOrder[revealIndex]
           return submissionId === undefined

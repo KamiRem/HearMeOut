@@ -20,6 +20,7 @@ class MemoryStorage implements ImageStorage {
     return `https://storage.example/private/${key}?token=test`
   }
   async remove(key: string) { this.removed.push(key); this.objects.delete(key) }
+  async sign(key: string) { return `https://storage.example/private/${key}?token=renewed` }
 }
 
 const origin = 'http://localhost:5173'
@@ -127,6 +128,73 @@ test('upload authorization rejects strangers, spoofing, stale rounds and duplica
   assert.equal(foreign.statusCode, 401)
   value<RoomMembership>((await upload(ticket, await png())).json())
   assert.equal(value<RoomMembership | null>(await sync())?.room.submissionProgress?.submitted, 1)
+})
+
+test('reveal sockets validate commands, deduplicate in-flight requests and broadcast only the current image', { timeout: 10000 }, async (t) => {
+  const storage = new MemoryStorage()
+  const { host, guest, connect, scope, prepare, upload, sync } = await setup(t, storage)
+  const stranger = await connect()
+  for (const client of [host, guest]) value((await upload(value<ImageUploadTicket>(await prepare(client)), await png())).json())
+  const waiting = value<RoomMembership | null>(await sync())!
+  const command = { ...scope, requestId: randomUUID(), expectedVersion: waiting.room.state.version }
+  failure(await stranger.timeout(2000).emitWithAck('reveal:start', command), 'NOT_A_MEMBER')
+  failure(await guest.timeout(2000).emitWithAck('reveal:start', command), 'HOST_ONLY')
+  for (const extra of [{ submissionId: randomUUID() }, { previewUrl: 'https://spoofed.example' }, { playerId: waiting.playerId }]) {
+    failure(await host.timeout(2000).emitWithAck('reveal:start', { ...command, ...extra }), 'INVALID_PAYLOAD')
+  }
+  let release!: (url: string) => void
+  let entered!: () => void
+  const startedSigning = new Promise<void>((resolve) => { entered = resolve })
+  let signCount = 0
+  storage.sign = async () => {
+    signCount++
+    entered()
+    return new Promise((resolve) => { release = resolve })
+  }
+  const broadcasts: RoomSnapshot[] = []
+  guest.on('room:update', (room) => broadcasts.push(room))
+  const first = host.timeout(2000).emitWithAck('reveal:start', command)
+  await startedSigning
+  const duplicate = host.timeout(2000).emitWithAck('reveal:start', command)
+  failure(await host.timeout(2000).emitWithAck('reveal:next', command), 'REQUEST_CONFLICT')
+  assert.deepEqual(value<RoomMembership | null>(await sync())!.room, waiting.room)
+  release('https://storage.example/only-visible.webp?renewed=1')
+  const revealed = value<RoomMembership>(await first)
+  assert.deepEqual(value(await duplicate), revealed)
+  assert.deepEqual(value(await host.timeout(2000).emitWithAck('reveal:start', command)), revealed)
+  assert.equal(signCount, 1)
+  failure(await host.timeout(2000).emitWithAck('reveal:start', { ...command, requestId: randomUUID() }), 'STALE_REQUEST')
+  assert.deepEqual(value<RoomMembership | null>(await sync(guest))!.room, revealed.room)
+  assert.equal(broadcasts.length, 1)
+  assert.equal(broadcasts[0]!.revealedSubmissions.length, 1)
+  assert.equal(JSON.stringify(broadcasts).includes('objectKey'), false)
+  assert.equal(JSON.stringify(broadcasts).includes('sessionToken'), false)
+  assert.equal(JSON.stringify(broadcasts).includes('private/'), false)
+  const next = { ...command, requestId: randomUUID(), expectedVersion: revealed.room.state.version }
+  failure(await guest.timeout(2000).emitWithAck('reveal:next', next), 'HOST_ONLY')
+  storage.sign = async (key) => `https://storage.example/${key}?renewed=2`
+  const second = value<RoomMembership>(await host.timeout(2000).emitWithAck('reveal:next', next))
+  assert.equal(second.room.revealedSubmissions.length, 2)
+  const ended = value<RoomMembership>(await host.timeout(2000).emitWithAck('reveal:next', {
+    ...next, requestId: randomUUID(), expectedVersion: second.room.state.version,
+  }))
+  assert.equal(ended.room.state.phase, 'ROUND_RESULTS')
+})
+
+test('a failed reveal returns a safe error over the socket and can be retried', { timeout: 10000 }, async (t) => {
+  const storage = new MemoryStorage()
+  const { host, guest, scope, prepare, upload, sync } = await setup(t, storage)
+  for (const client of [host, guest]) value((await upload(value<ImageUploadTicket>(await prepare(client)), await png())).json())
+  const before = value<RoomMembership | null>(await sync())!.room
+  const command = { ...scope, requestId: randomUUID(), expectedVersion: before.state.version }
+  storage.sign = async () => { throw new Error('secret upstream details') }
+  const result = await host.timeout(2000).emitWithAck('reveal:start', command)
+  failure(result, 'STORAGE_ERROR')
+  assert.equal(JSON.stringify(result).includes('secret upstream details'), false)
+  assert.deepEqual(value<RoomMembership | null>(await sync())!.room, before)
+  storage.sign = async () => 'https://storage.example/retried'
+  const retried = value<RoomMembership>(await host.timeout(2000).emitWithAck('reveal:start', { ...command, requestId: randomUUID() }))
+  assert.equal(retried.room.revealedSubmissions.length, 1)
 })
 
 test('HTTP body limits, invalid MIME and corrupt content reject uploads without locking the player', { timeout: 10000 }, async (t) => {
@@ -237,6 +305,10 @@ test('Supabase adapter uses a private bucket, safe binary upload and a signed pr
   assert.equal(calls[1]?.init.redirect, 'error')
   await storage.remove('test.webp')
   assert.equal(calls[3]?.init.body, JSON.stringify({ prefixes: ['test.webp'] }))
+  assert.equal(await storage.sign('test.webp'), url)
+  assert.equal(calls.length, 5)
+  assert.equal(calls[4]?.url, 'https://project.supabase.co/storage/v1/object/sign/images/test.webp')
+  assert.equal(calls[4]?.init.body, JSON.stringify({ expiresIn: 3600 }))
   const publicStorage = new SupabaseImageStorage({ url: 'https://project.supabase.co', key: 'key', bucket: 'images' },
     async () => Response.json({ public: true }))
   await assert.rejects(publicStorage.put('test.webp', Buffer.from('data')), /private/)

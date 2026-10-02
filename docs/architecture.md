@@ -153,8 +153,13 @@ Tailwind, Zustand, Motion, Supabase, PostgreSQL et Prisma ne sont
 pas installés comme dépendances. Supabase Storage est utilisé via HTTP natif côté
 serveur ; `sharp` est ajouté pour décoder et réencoder les images. Voir [les images](image-upload.md).
 React Router sépare `/room/:roomCode` et `/game/:roomCode` selon la phase reçue
-du serveur, avec le socket et `useRoom` conservés au-dessus des routes. Le gâteau est une décoration
-CSS statique, sans mécanique de jeu. Aucune nouvelle dépendance aux étapes 2 à 5.
+du serveur, avec le socket et `useRoom` conservés au-dessus des routes. Depuis
+l’étape 7, `RevealCake` affiche les images déjà révélées sur un gâteau CSS animé.
+`RevealPanel` expose les intentions du Host ; `RoomService.reveal` renouvelle le
+lien de l’image sélectionnée côté serveur, vérifie à nouveau l’autorisation puis
+diffuse le nouvel état. Le cache des commandes couvre également les requêtes
+asynchrones en cours. Voir [les révélations](reveals.md). Aucune dépendance ajoutée
+pour le gâteau, son animation ou son dialogue d’agrandissement.
 
 ## Références
 

@@ -94,7 +94,7 @@ test('all events outside their permitted phases are rejected without mutation', 
   const final = step(lastResults, { type: 'END_GAME' })
   const cases: [GameMachine, readonly GameEvent['type'][]][] = [
     [lobby, ['START_GAME']], [submission, ['END_SUBMISSION']], [waiting, ['START_REVEALS']],
-    [reveal, ['START_VOTE']], [voting, ['END_VOTE']], [results, ['NEXT_REVEAL']],
+    [reveal, ['START_VOTE', 'NEXT_REVEAL']], [voting, ['END_VOTE']], [results, ['NEXT_REVEAL']],
     [roundResults, ['NEXT_ROUND']], [lastResults, ['END_GAME']], [final, []],
   ]
   const actions: RoundAction[] = [

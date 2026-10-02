@@ -1,6 +1,6 @@
 import { randomBytes, randomInt, randomUUID } from 'node:crypto'
 import { DEFAULT_GAME_SETTINGS, MIN_PLAYERS } from '@hear-me-out/shared'
-import type { ErrorCode, GameSettings, RoomMembership, RoomSnapshot, SubmissionScope } from '@hear-me-out/shared'
+import type { ErrorCode, GameSettings, RevealCommand, RoomMembership, RoomSnapshot, SubmissionScope } from '@hear-me-out/shared'
 import type { GameRoom, ServerPlayer, StoredImage } from '../models/room.ts'
 import { createGameMachine, projectGameState, transitionGame, type RoundEvent } from '../game/gameMachine.ts'
 
@@ -38,6 +38,7 @@ interface RoomServiceOptions {
   onRoomUpdate?: (room: RoomSnapshot, serverNow: number) => void
   onDiscardImage?: (objectKey: string) => void
   onSessionExpired?: (departure: Departure) => void
+  signImage?: (objectKey: string) => Promise<string>
 }
 
 export interface SubmissionClock {
@@ -67,9 +68,10 @@ export class RoomService {
   private readonly sessions = new Map<string, string>()
   private readonly disconnected = new Map<string, { expiresAt: number; cancel: () => void }>()
   private readonly onSessionExpired: (departure: Departure) => void
+  private readonly signImage: RoomServiceOptions['signImage']
 
   constructor({ generateCode = generateRoomCode, maxRooms = 1000, capacity = 12,
-    clock = systemClock, onRoomUpdate = () => {}, onDiscardImage = () => {}, onSessionExpired = () => {} }: RoomServiceOptions = {}) {
+    clock = systemClock, onRoomUpdate = () => {}, onDiscardImage = () => {}, onSessionExpired = () => {}, signImage }: RoomServiceOptions = {}) {
     this.generateCode = generateCode
     this.maxRooms = maxRooms
     this.capacity = capacity
@@ -77,6 +79,7 @@ export class RoomService {
     this.onRoomUpdate = onRoomUpdate
     this.onDiscardImage = onDiscardImage
     this.onSessionExpired = onSessionExpired
+    this.signImage = signImage
   }
 
   serverTime() { return this.clock.now() }
@@ -270,9 +273,57 @@ export class RoomService {
     const next = transitionGame(room.game, event)
     this.cancelTimer(room.id)
     room.game = next
+    if (next.state.phase === 'REVEAL' && room.submissionRound
+      && !room.submissionRound.revealedIds.includes(next.state.submissionId)) {
+      room.submissionRound.revealedIds.push(next.state.submissionId)
+    }
     room.revision++
     if (next.state.phase === 'SUBMISSION') this.beginSubmission(room)
     return this.snapshot(room)
+  }
+
+  async reveal(connectionId: string, command: RevealCommand, action: 'start' | 'next'): Promise<RoomMembership> {
+    const { room, player } = this.revealHost(connectionId, command, action)
+    const submissionId = room.game.revealOrder[action === 'start' ? 0 : room.game.revealIndex + 1]
+    const submission = [...room.submissionRound!.submissions.values()].find((item) => item.id === submissionId)
+    if (submissionId !== undefined && !submission) throw new RoomError('INTERNAL_ERROR', 'Image de révélation introuvable.')
+    let previewUrl: string | undefined
+    if (submission) {
+      if (!this.signImage) throw new RoomError('UPLOAD_UNAVAILABLE', 'Le stockage des images est indisponible.')
+      try {
+        previewUrl = await this.signImage(submission.image.objectKey)
+      } catch {
+        throw new RoomError('STORAGE_ERROR', 'Impossible de charger cette image. Réessaie la révélation.')
+      }
+    }
+    // Storage is asynchronous: recheck membership, phase and version before committing.
+    this.revealHost(connectionId, command, action)
+    if (submission && previewUrl) submission.image.previewUrl = previewUrl
+    const snapshot = this.advanceGame(room.id, {
+      type: action === 'start' ? 'START_REVEALS' : 'NEXT_REVEAL',
+      expectedVersion: command.expectedVersion, gameId: command.gameId, roundId: command.roundId,
+    })
+    this.onRoomUpdate(snapshot, this.serverTime())
+    return this.membership(room, player.id)
+  }
+
+  private revealHost(connectionId: string, command: RevealCommand, action: 'start' | 'next') {
+    const member = this.memberships.get(connectionId)
+    const room = member && this.rooms.get(member.code)
+    const player = member && room?.players.get(member.playerId)
+    if (!room || room.id !== command.roomId || !player?.isConnected) {
+      throw new RoomError('NOT_A_MEMBER', 'Tu ne fais pas partie de ce salon.')
+    }
+    if (player.id !== room.hostPlayerId) throw new RoomError('HOST_ONLY', 'Seul le Host peut révéler une image.')
+    const state = room.game.state
+    if (!('roundId' in state) || state.id !== command.gameId || state.roundId !== command.roundId) {
+      throw new RoomError('STALE_ROUND', 'Cette demande concerne un autre round.')
+    }
+    if (state.version !== command.expectedVersion) throw new RoomError('STALE_REQUEST', 'La révélation a déjà changé. Réessaie.')
+    if (state.phase !== (action === 'start' ? 'WAITING' : 'REVEAL')) {
+      throw new RoomError('INVALID_PHASE', 'Cette action est indisponible pendant cette phase.')
+    }
+    return { room, player }
   }
 
   assertSubmissionOpen(connectionId: string, command: SubmissionScope) {
@@ -315,7 +366,7 @@ export class RoomService {
     if (state.phase !== 'SUBMISSION') return
     this.discardImages(room)
     room.submissionRound = {
-      id: state.roundId, expectedPlayerIds: new Set(room.players.keys()), submissions: new Map(),
+      id: state.roundId, expectedPlayerIds: new Set(room.players.keys()), submissions: new Map(), revealedIds: [],
     }
     this.armTimer(room)
   }
@@ -426,6 +477,11 @@ export class RoomService {
       settings: { ...room.settings },
       settingsRevision: room.settingsRevision,
       state: projectGameState(room.game),
+      revealedSubmissions: (room.submissionRound?.revealedIds ?? []).flatMap((id) => {
+        const submission = [...room.submissionRound!.submissions.values()].find((item) => item.id === id)
+        return submission ? [{ submissionId: id, previewUrl: submission.image.previewUrl,
+          width: submission.image.width, height: submission.image.height }] : []
+      }),
       submissionProgress: room.submissionRound ? {
         roundId: room.submissionRound.id,
         submitted: room.submissionRound.submissions.size,

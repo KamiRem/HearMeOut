@@ -1,17 +1,21 @@
-:root {
-  font-family: 'Segoe UI', sans-serif;
-  color: #302820;
-  background: #fbf5ec;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: abyss --default;
 }
 
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
-button, a { -webkit-tap-highlight-color: transparent; }
-button { font: inherit; }
-button:focus-visible, a:focus-visible { outline: 3px solid #256b59; outline-offset: 5px; }
-button:disabled { cursor: not-allowed; opacity: .55; }
-::selection { background: #f7c852; color: #302820; }
+@theme {
+  --font-sans: 'Segoe UI', system-ui, sans-serif;
+}
+
+@layer base {
+  :root { font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; min-width: 320px; }
+  button, a { -webkit-tap-highlight-color: transparent; }
+  button:not(:disabled), summary { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 4px; }
+  ::selection { background: var(--color-primary); color: var(--color-primary-content); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

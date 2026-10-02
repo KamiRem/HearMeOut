@@ -92,9 +92,10 @@ Pour ce MVP, utiliser un bucket dédié et supprimer ses objets orphelins après
 l’arrêt de toutes les parties. Une rétention durable automatisée reste à prévoir
 avec la persistance ; ne pas vider un bucket partagé avec une autre application.
 
-Les aperçus signés expirent après une heure. Leur renouvellement pour les
-révélations sera raccordé à l’étape 7. Aucune révélation, note ou progression
-automatique de round n’est ajoutée ici.
+Les aperçus signés expirent après une heure. Depuis l’étape 7, le lien d’une image
+est renouvelé avant sa révélation, sans réenvoyer le fichier. Voir
+[les révélations](reveals.md), notamment la limite des salons laissés inactifs.
+Les votes et la progression automatique des rounds restent à venir.
 
 ## Vérifier
 

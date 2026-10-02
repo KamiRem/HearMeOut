@@ -5,7 +5,7 @@ import type { createSocket } from '../services/socket'
 import { readRoomSession, saveRoomSession } from '../services/roomSession'
 
 type ClientSocket = ReturnType<typeof createSocket>
-type Action = 'create' | 'join' | 'leave' | 'ready' | 'settings' | 'start' | 'submit'
+type Action = 'create' | 'join' | 'leave' | 'ready' | 'settings' | 'start' | 'submit' | 'reveal'
 
 function sampleClock(current: ServerClockSample | null, serverNow: number): ServerClockSample {
   return current && current.serverNow >= serverNow ? current : { serverNow, receivedAt: performance.now() }
@@ -14,7 +14,12 @@ function sampleClock(current: ServerClockSample | null, serverNow: number): Serv
 export function useRoom(socket: ClientSocket | null) {
   const [membership, setMembership] = useState<RoomMembership | null>(null)
   const [pending, setPending] = useState<Action | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessageText] = useState<string | null>(null)
+  const [messageTone, setMessageTone] = useState<'info' | 'success' | 'error'>('info')
+  function setMessage(text: string | null, tone: typeof messageTone = 'error') {
+    setMessageText(text)
+    setMessageTone(tone)
+  }
   const [clockSample, setClockSample] = useState<ServerClockSample | null>(null)
   const latestRoom = useRef<RoomSnapshot | null>(null)
   const lastClosedRoomId = useRef<string | null>(null)
@@ -98,7 +103,7 @@ export function useRoom(socket: ClientSocket | null) {
       latestRoom.current = null
       setMembership(null)
       if (operation.current?.action !== 'leave') {
-        setMessage('Le créateur a quitté le salon. Tu peux en créer ou en rejoindre un autre.')
+        setMessage('Le créateur a quitté le salon. Tu peux en créer ou en rejoindre un autre.', 'info')
       }
       operation.current = null
       setPending(null)
@@ -106,7 +111,7 @@ export function useRoom(socket: ClientSocket | null) {
 
     function onDisconnect() {
       uploadController.current?.abort()
-      if (sessionToken.current) setMessage('Connexion interrompue. Reprise automatique de ta session pendant une minute…')
+      if (sessionToken.current) setMessage('Connexion interrompue. Reprise automatique de ta session pendant une minute…', 'info')
       latestRoom.current = null
       lastClosedRoomId.current = null
       operation.current = null
@@ -118,7 +123,7 @@ export function useRoom(socket: ClientSocket | null) {
 
     function onReplaced() {
       acceptMembership(null)
-      setMessage('Cette session a été reprise dans un autre onglet.')
+      setMessage('Cette session a été reprise dans un autre onglet.', 'info')
     }
 
     socket.on('connect', restore)
@@ -166,19 +171,19 @@ export function useRoom(socket: ClientSocket | null) {
       }
     } catch {
       if (!isCurrent()) return
-      setMessage('La réponse tarde à arriver. Vérification du salon…')
+      setMessage('La réponse tarde à arriver. Vérification du salon…', 'info')
       try {
         const synced = await socket.timeout(5000).emitWithAck('room:sync', { requestId: crypto.randomUUID() })
         if (!isCurrent()) return
         if (!synced.ok) throw new Error('Synchronization failed')
         acceptMembership(synced.data)
-        setMessage('État du salon vérifié. Tu peux continuer.')
+        setMessage('État du salon vérifié. Tu peux continuer.', 'success')
       } catch {
         if (!isCurrent()) return
         // A new connection cannot accidentally control an uncertain old membership.
         socket.disconnect()
         socket.connect()
-        setMessage('Connexion réinitialisée. Rejoins ton salon dès que le serveur répond.')
+        setMessage('Connexion réinitialisée. Rejoins ton salon dès que le serveur répond.', 'info')
       }
     } finally {
       if (operation.current === current) {
@@ -256,6 +261,16 @@ export function useRoom(socket: ClientSocket | null) {
     })
   }
 
+  function reveal(action: 'start' | 'next') {
+    if (!membership || !('roundId' in membership.room.state)) return
+    const { room } = membership
+    const state = membership.room.state
+    return request('reveal', (client) => client.timeout(15_000).emitWithAck(`reveal:${action}`, {
+      requestId: crypto.randomUUID(), roomId: room.id, gameId: state.id,
+      roundId: state.roundId, expectedVersion: state.version,
+    }))
+  }
+
   function retryResume() {
     if (!socket || !restoring) return
     setResumeFailed(false)
@@ -263,6 +278,6 @@ export function useRoom(socket: ClientSocket | null) {
     socket.connect()
   }
 
-  return { membership, pending, message, clockSample, restoring, resumeFailed, sessionEnded, retryResume,
-    createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame, submitImage }
+  return { membership, pending, message, messageTone, clockSample, restoring, resumeFailed, sessionEnded, retryResume,
+    createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame, submitImage, reveal }
 }
