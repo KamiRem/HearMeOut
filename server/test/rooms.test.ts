@@ -77,7 +77,7 @@ test('create and join broadcast the same roster without exposing connection ids'
   assert.deepEqual(await guestUpdate, joined.room)
   assert.equal(joined.room.players.length, 2)
   assert.equal(joined.room.revision, 2)
-  for (const player of joined.room.players) assert.deepEqual(Object.keys(player).sort(), ['id', 'isReady', 'nickname'])
+  for (const player of joined.room.players) assert.deepEqual(Object.keys(player).sort(), ['id', 'isConnected', 'isReady', 'nickname'])
   assert.equal(value(await sync(guest))?.playerId, joined.playerId)
 })
 
@@ -169,21 +169,54 @@ test('host departure closes the room, clears all memberships and allows new room
   value(await create(guest))
 })
 
-test('guest disconnection removes the member and host disconnection closes the room', { timeout: 10_000 }, async (t) => {
+test('guest and host disconnections reserve their seats and can resume with private tokens', { timeout: 10_000 }, async (t) => {
   const connect = await setup(t)
   const host = await connect()
   const guest = await connect()
   const room = value(await create(host))
-  value(await join(guest, room.room.code))
+  const joined = value(await join(guest, room.room.code))
   const departed = update(host)
   guest.disconnect()
-  assert.equal((await departed).players.length, 1)
+  const offline = await departed
+  assert.equal(offline.players.length, 2)
+  assert.equal(offline.players.find((player) => player.id === joined.playerId)?.isConnected, false)
   const other = await connect()
-  value(await join(other, room.room.code))
-  const notification = closed(other)
+  const resumed = value<RoomMembership>(await other.timeout(2000).emitWithAck('room:resume', {
+    requestId: randomUUID(), sessionToken: joined.sessionToken,
+  }))
+  assert.equal(resumed.playerId, joined.playerId)
+  const notification = update(other)
   host.disconnect()
-  assert.equal((await notification).reason, 'HOST_DISCONNECTED')
-  assert.equal(value(await sync(other)), null)
+  assert.equal((await notification).players.find((player) => player.id === room.playerId)?.isConnected, false)
+  const newHost = await connect()
+  const restoredHost = value<RoomMembership>(await newHost.timeout(2000).emitWithAck('room:resume', {
+    requestId: randomUUID(), sessionToken: room.sessionToken,
+  }))
+  assert.equal(restoredHost.room.hostPlayerId, room.playerId)
+  assert.equal(value(await sync(other))?.room.players.length, 2)
+})
+
+test('resume requires a private token and replaces the former socket without closing the room', { timeout: 10_000 }, async (t) => {
+  const connect = await setup(t)
+  const host = await connect()
+  const guest = await connect()
+  const next = await connect()
+  const created = value(await create(host))
+  value(await join(guest, created.room.code))
+  failure(await next.timeout(2000).emitWithAck('room:resume', { requestId: randomUUID(), sessionToken: created.room.code }), 'INVALID_PAYLOAD')
+  failure(await next.timeout(2000).emitWithAck('room:resume', { requestId: randomUUID(), sessionToken: 'a'.repeat(64) }), 'SESSION_EXPIRED')
+  const replaced = new Promise<void>((resolve) => host.once('session:replaced', resolve))
+  const lostConnection = new Promise<void>((resolve) => host.once('disconnect', () => resolve()))
+  const restored = value<RoomMembership>(await next.timeout(2000).emitWithAck('room:resume', {
+    requestId: randomUUID(), sessionToken: created.sessionToken,
+  }))
+  await replaced
+  await lostConnection
+  assert.equal(restored.playerId, created.playerId)
+  assert.equal(value(await sync(guest))?.room.players.length, 2)
+  value(await next.timeout(2000).emitWithAck('room:leave', { requestId: randomUUID(), roomId: created.room.id }))
+  const later = await connect()
+  failure(await later.timeout(2000).emitWithAck('room:resume', { requestId: randomUUID(), sessionToken: created.sessionToken }), 'SESSION_EXPIRED')
 })
 
 test('capacity remains twelve under simultaneous joins', { timeout: 10_000 }, async (t) => {
@@ -347,7 +380,7 @@ test('launch requires two players and every member ready, including the Host', {
   value(await join(late, room.code, 'Dernier'))
   failure(await start(host, room), 'PLAYERS_NOT_READY')
   const departure = update(host)
-  late.disconnect()
+  value(await late.timeout(2000).emitWithAck('room:leave', { requestId: randomUUID(), roomId: room.id }))
   await departure
   const launched = value(await start(host, room))
   assert.equal(launched.room.state.phase, 'SUBMISSION')

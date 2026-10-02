@@ -38,6 +38,7 @@ export type ErrorCode =
   | 'INVALID_IMAGE'
   | 'IMAGE_TOO_LARGE'
   | 'STORAGE_ERROR'
+  | 'SESSION_EXPIRED'
 
 export type Result<T> =
   | { ok: true; data: T }
@@ -46,6 +47,7 @@ export type Result<T> =
 export type Ack<T> = (result: Result<T>) => void
 
 export interface ClientToServerEvents {
+  'room:resume': (payload: { requestId: string; sessionToken: string }, ack: Ack<RoomMembership>) => void
   'image:prepare': (payload: PrepareImageCommand, ack: Ack<ImageUploadTicket>) => void
   'player:ready': (payload: ReadyCommand, ack: Ack<RoomMembership>) => void
   'room:settings:update': (payload: UpdateSettingsCommand, ack: Ack<RoomMembership>) => void
@@ -61,6 +63,7 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
+  'session:replaced': () => void
   'room:update': (room: RoomSnapshot, serverNow: number) => void
   'room:closed': (event: RoomClosed) => void
   'connection:welcome': (payload: ServerHello) => void

@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto'
+import { randomBytes, randomInt, randomUUID } from 'node:crypto'
 import { DEFAULT_GAME_SETTINGS, MIN_PLAYERS } from '@hear-me-out/shared'
 import type { ErrorCode, GameSettings, RoomMembership, RoomSnapshot, SubmissionScope } from '@hear-me-out/shared'
 import type { GameRoom, ServerPlayer, StoredImage } from '../models/room.ts'
@@ -37,6 +37,7 @@ interface RoomServiceOptions {
   clock?: SubmissionClock
   onRoomUpdate?: (room: RoomSnapshot, serverNow: number) => void
   onDiscardImage?: (objectKey: string) => void
+  onSessionExpired?: (departure: Departure) => void
 }
 
 export interface SubmissionClock {
@@ -63,15 +64,19 @@ export class RoomService {
   private readonly onRoomUpdate: NonNullable<RoomServiceOptions['onRoomUpdate']>
   private readonly timers = new Map<string, { cancel: () => void }>()
   private readonly onDiscardImage: (objectKey: string) => void
+  private readonly sessions = new Map<string, string>()
+  private readonly disconnected = new Map<string, { expiresAt: number; cancel: () => void }>()
+  private readonly onSessionExpired: (departure: Departure) => void
 
   constructor({ generateCode = generateRoomCode, maxRooms = 1000, capacity = 12,
-    clock = systemClock, onRoomUpdate = () => {}, onDiscardImage = () => {} }: RoomServiceOptions = {}) {
+    clock = systemClock, onRoomUpdate = () => {}, onDiscardImage = () => {}, onSessionExpired = () => {} }: RoomServiceOptions = {}) {
     this.generateCode = generateCode
     this.maxRooms = maxRooms
     this.capacity = capacity
     this.clock = clock
     this.onRoomUpdate = onRoomUpdate
     this.onDiscardImage = onDiscardImage
+    this.onSessionExpired = onSessionExpired
   }
 
   serverTime() { return this.clock.now() }
@@ -82,14 +87,63 @@ export class RoomService {
     this.timers.clear()
     this.rooms.clear()
     this.memberships.clear()
+    for (const session of this.disconnected.values()) session.cancel()
+    this.disconnected.clear()
+    this.sessions.clear()
   }
 
   current(connectionId: string): RoomMembership | null {
     const membership = this.memberships.get(connectionId)
     if (!membership) return null
     const room = this.rooms.get(membership.code)
-    if (!room) return null
+    if (!room || !room.players.get(membership.playerId)?.isConnected) return null
     return this.membership(room, membership.playerId)
+  }
+
+  disconnect(connectionId: string) {
+    const member = this.memberships.get(connectionId)
+    const room = member && this.rooms.get(member.code)
+    const player = member && room?.players.get(member.playerId)
+    if (!room || !player || !player.isConnected) return
+    player.isConnected = false
+    room.revision++
+    const session = { expiresAt: this.clock.now() + 60_000, cancel: () => {} }
+    this.disconnected.set(player.id, session)
+    const expire = () => {
+      if (this.disconnected.get(player.id) !== session) return
+      if (this.clock.now() < session.expiresAt) {
+        session.cancel = this.clock.schedule(expire, session.expiresAt - this.clock.now())
+        return
+      }
+      const departure = this.leave(connectionId)
+      if (departure) this.onSessionExpired(departure)
+    }
+    session.cancel = this.clock.schedule(expire, 60_000)
+    this.onRoomUpdate(this.snapshot(room), this.serverTime())
+  }
+
+  resume(connectionId: string, sessionToken: string) {
+    const previousConnectionId = this.sessions.get(sessionToken)
+    const member = previousConnectionId ? this.memberships.get(previousConnectionId) : undefined
+    const room = member && this.rooms.get(member.code)
+    const player = member && room?.players.get(member.playerId)
+    if (!previousConnectionId || !room || !player) throw new RoomError('SESSION_EXPIRED', 'Ta session a expiré ou le salon a été fermé.')
+    const disconnected = this.disconnected.get(player.id)
+    if (disconnected && this.clock.now() >= disconnected.expiresAt) {
+      const departure = this.leave(previousConnectionId)
+      if (departure) this.onSessionExpired(departure)
+      throw new RoomError('SESSION_EXPIRED', 'Ta session a expiré après une minute sans connexion.')
+    }
+    if (previousConnectionId !== connectionId) this.assertAvailable(connectionId)
+    disconnected?.cancel()
+    this.disconnected.delete(player.id)
+    this.memberships.delete(previousConnectionId)
+    this.memberships.set(connectionId, { code: room.code, playerId: player.id })
+    this.sessions.set(sessionToken, connectionId)
+    player.connectionId = connectionId
+    player.isConnected = true
+    room.revision++
+    return { membership: this.membership(room, player.id), previousConnectionId }
   }
 
   create(connectionId: string, nickname: string): RoomMembership {
@@ -149,12 +203,12 @@ export class RoomService {
     if (membership.playerId === room.hostPlayerId) {
       this.discardImages(room)
       this.cancelTimer(room.id)
-      for (const player of room.players.values()) this.memberships.delete(player.connectionId)
+      for (const player of room.players.values()) this.forgetPlayer(player)
       this.rooms.delete(room.code)
       return { roomId: room.id, code: room.code, snapshot: null }
     }
 
-    this.memberships.delete(connectionId)
+    this.forgetPlayer(room.players.get(membership.playerId)!)
     room.players.delete(membership.playerId)
     room.revision++
     if (room.game.state.phase === 'SUBMISSION' && room.submissionRound) {
@@ -194,7 +248,7 @@ export class RoomService {
     if (room.players.size < MIN_PLAYERS) {
       throw new RoomError('NOT_ENOUGH_PLAYERS', 'Il faut au moins deux joueurs pour lancer la partie.')
     }
-    if ([...room.players.values()].some((member) => !member.isReady)) {
+    if ([...room.players.values()].some((member) => !member.isReady || !member.isConnected)) {
       throw new RoomError('PLAYERS_NOT_READY', 'Tous les joueurs doivent être prêts, Host compris.')
     }
     const startedAt = this.clock.now()
@@ -224,7 +278,7 @@ export class RoomService {
   assertSubmissionOpen(connectionId: string, command: SubmissionScope) {
     const member = this.memberships.get(connectionId)
     const room = member && this.rooms.get(member.code)
-    if (!member || !room || room.id !== command.roomId) {
+    if (!member || !room || room.id !== command.roomId || !room.players.get(member.playerId)?.isConnected) {
       throw new RoomError('NOT_A_MEMBER', 'Tu ne fais pas partie de ce salon.')
     }
     const state = room.game.state
@@ -307,7 +361,7 @@ export class RoomService {
   private membership(room: GameRoom, playerId: string): RoomMembership {
     const image = room.submissionRound?.submissions.get(playerId)?.image
     return {
-      room: this.snapshot(room), playerId, serverNow: this.serverTime(),
+      room: this.snapshot(room), playerId, serverNow: this.serverTime(), sessionToken: room.players.get(playerId)!.sessionToken,
       ownSubmission: {
         roundId: room.submissionRound?.id ?? null,
         image: image ? { id: image.id, previewUrl: image.previewUrl, width: image.width, height: image.height } : null,
@@ -325,7 +379,7 @@ export class RoomService {
     const membership = this.memberships.get(connectionId)
     const room = membership && this.rooms.get(membership.code)
     const player = membership && room?.players.get(membership.playerId)
-    if (!room || room.id !== roomId || !player) {
+    if (!room || room.id !== roomId || !player || !player.isConnected) {
       throw new RoomError('NOT_A_MEMBER', 'Tu ne fais pas partie de ce salon.')
     }
     if (hostOnly && player.id !== room.hostPlayerId) {
@@ -349,7 +403,16 @@ export class RoomService {
   }
 
   private player(connectionId: string, nickname: string): ServerPlayer {
-    return { id: randomUUID(), nickname, connectionId, isReady: false }
+    const sessionToken = randomBytes(32).toString('hex')
+    this.sessions.set(sessionToken, connectionId)
+    return { id: randomUUID(), nickname, connectionId, sessionToken, isReady: false, isConnected: true }
+  }
+
+  private forgetPlayer(player: ServerPlayer) {
+    this.memberships.delete(player.connectionId)
+    this.sessions.delete(player.sessionToken)
+    this.disconnected.get(player.id)?.cancel()
+    this.disconnected.delete(player.id)
   }
 
   private snapshot(room: GameRoom): RoomSnapshot {
@@ -359,7 +422,7 @@ export class RoomService {
       hostPlayerId: room.hostPlayerId,
       revision: room.revision,
       capacity: this.capacity,
-      players: [...room.players.values()].map(({ id, nickname, isReady }) => ({ id, nickname, isReady })),
+      players: [...room.players.values()].map(({ id, nickname, isReady, isConnected }) => ({ id, nickname, isReady, isConnected })),
       settings: { ...room.settings },
       settingsRevision: room.settingsRevision,
       state: projectGameState(room.game),

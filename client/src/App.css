@@ -93,6 +93,19 @@ form input:focus-visible { outline: 2px solid #256b59; outline-offset: 2px; }
 .code-field { margin-top: 20px; }
 .code-input { letter-spacing: 5px; font-family: ui-monospace, monospace; }
 .in-room { grid-template-columns: 1fr; max-width: 800px; }
+.in-game { grid-template-columns: 1fr; width: min(1200px, 100%); align-content: start; }
+.in-game .masthead { padding-bottom: 24px; border-bottom: 1px solid #e2d6c8; }
+.game-page { display: flex; flex-direction: column; min-height: calc(100svh - 140px); }
+.game-stage { display: grid; align-items: center; flex: 1; width: min(760px, 100%); margin: 24px auto; }
+.game-stage .game-launched { margin: 0; padding: clamp(20px, 4vw, 36px); }
+.game-presence { border-top: 1px solid #e2d6c8; padding-top: 16px; font-size: 13px; }
+.game-presence ul { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; }
+.game-presence li { border-radius: 20px; padding: 8px 12px; background: #efe7dc; overflow-wrap: anywhere; max-width: 100%; }
+.game-presence .is-offline { color: #716357; border: 1px dashed #b4a08c; }
+.game-page .leave-room { width: min(360px, 100%); align-self: flex-end; }
+.session-loading { grid-column: 1 / -1; padding: 32px 0; }
+.session-loading h1 { font-size: 28px; line-height: 1.3; letter-spacing: -1px; }
+.session-loading button { width: fit-content; }
 .room-card { width: 100%; }
 h1.room-title { font-size: clamp(28px, 5vw, 40px); line-height: 1.2; letter-spacing: -1.5px; margin: 16px 0; }
 .room-code {

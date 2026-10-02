@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { GameSettings, Result, RoomMembership, RoomSnapshot } from '@hear-me-out/shared'
 import type { ServerClockSample } from './useCountdown'
 import type { createSocket } from '../services/socket'
+import { readRoomSession, saveRoomSession } from '../services/roomSession'
 
 type ClientSocket = ReturnType<typeof createSocket>
 type Action = 'create' | 'join' | 'leave' | 'ready' | 'settings' | 'start' | 'submit'
@@ -20,14 +21,30 @@ export function useRoom(socket: ClientSocket | null) {
   const activeSocket = useRef(socket)
   const operation = useRef<{ action: Action; connectionId: string } | null>(null)
   const uploadController = useRef<AbortController | null>(null)
+  const sessionToken = useRef(readRoomSession())
+  const [restoring, setRestoring] = useState(() => readRoomSession() !== null)
+  const [resumeFailed, setResumeFailed] = useState(false)
+  const [sessionEnded, setSessionEnded] = useState(false)
+
+  function forgetSession() {
+    sessionToken.current = null
+    saveRoomSession(null)
+    setRestoring(false)
+    setResumeFailed(false)
+    setSessionEnded(true)
+  }
 
   function acceptMembership(next: RoomMembership | null) {
     if (!next) {
+      forgetSession()
       latestRoom.current = null
       setMembership(null)
       return
     }
     if (lastClosedRoomId.current === next.room.id) return
+    sessionToken.current = next.sessionToken
+    if (!saveRoomSession(next.sessionToken)) setMessage('La session ne peut pas être conservée dans cet onglet. Un rechargement risque de te déconnecter.')
+    setSessionEnded(false)
     const latest = latestRoom.current
     const room = latest?.id === next.room.id && latest.revision > next.room.revision ? latest : next.room
     latestRoom.current = room
@@ -38,6 +55,32 @@ export function useRoom(socket: ClientSocket | null) {
   useEffect(() => {
     activeSocket.current = socket
     if (!socket) return
+    let cancelled = false
+
+    async function restore() {
+      const token = sessionToken.current
+      const connectionId = socket?.id
+      if (!token || !socket?.connected || !connectionId) return
+      setRestoring(true)
+      setResumeFailed(false)
+      try {
+        const result = await socket.timeout(5000).emitWithAck('room:resume', { requestId: crypto.randomUUID(), sessionToken: token })
+        if (cancelled || socket.id !== connectionId || !socket.connected || sessionToken.current !== token) return
+        if (result.ok) {
+          acceptMembership(result.data)
+          setMessage(null)
+          setRestoring(false)
+        } else if (result.error.code === 'SESSION_EXPIRED' || result.error.code === 'INVALID_PAYLOAD') {
+          acceptMembership(null)
+          setMessage(result.error.message)
+        } else {
+          setResumeFailed(true)
+          setMessage(result.error.message)
+        }
+      } catch {
+        if (!cancelled && socket.id === connectionId && socket.connected) setResumeFailed(true)
+      }
+    }
 
     function onUpdate(room: RoomSnapshot, serverNow: number) {
       if (lastClosedRoomId.current === room.id) return
@@ -50,34 +93,49 @@ export function useRoom(socket: ClientSocket | null) {
 
     function onClosed({ roomId }: { roomId: string }) {
       uploadController.current?.abort()
+      forgetSession()
       lastClosedRoomId.current = roomId
       latestRoom.current = null
       setMembership(null)
       if (operation.current?.action !== 'leave') {
         setMessage('Le créateur a quitté le salon. Tu peux en créer ou en rejoindre un autre.')
       }
+      operation.current = null
+      setPending(null)
     }
 
     function onDisconnect() {
       uploadController.current?.abort()
-      if (latestRoom.current) setMessage('Connexion interrompue. Rejoins le salon une fois reconnecté.')
+      if (sessionToken.current) setMessage('Connexion interrompue. Reprise automatique de ta session pendant une minute…')
       latestRoom.current = null
       lastClosedRoomId.current = null
       operation.current = null
       setClockSample(null)
       setMembership(null)
       setPending(null)
+      setRestoring(sessionToken.current !== null)
     }
 
+    function onReplaced() {
+      acceptMembership(null)
+      setMessage('Cette session a été reprise dans un autre onglet.')
+    }
+
+    socket.on('connect', restore)
+    socket.on('session:replaced', onReplaced)
     socket.on('room:update', onUpdate)
     socket.on('room:closed', onClosed)
     socket.on('disconnect', onDisconnect)
+    if (socket.connected) void restore()
     return () => {
+      cancelled = true
       uploadController.current?.abort()
       activeSocket.current = null
       socket.off('room:update', onUpdate)
       socket.off('room:closed', onClosed)
       socket.off('disconnect', onDisconnect)
+      socket.off('connect', restore)
+      socket.off('session:replaced', onReplaced)
     }
   }, [socket])
 
@@ -85,7 +143,7 @@ export function useRoom(socket: ClientSocket | null) {
     action: Action,
     execute: (client: ClientSocket) => Promise<Result<RoomMembership | { roomId: string }>>,
   ) {
-    if (!socket?.connected || !socket.id || operation.current) return
+    if (!socket?.connected || !socket.id || operation.current || restoring) return
     const current = { action, connectionId: socket.id }
     operation.current = current
     setPending(action)
@@ -198,5 +256,13 @@ export function useRoom(socket: ClientSocket | null) {
     })
   }
 
-  return { membership, pending, message, clockSample, createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame, submitImage }
+  function retryResume() {
+    if (!socket || !restoring) return
+    setResumeFailed(false)
+    socket.disconnect()
+    socket.connect()
+  }
+
+  return { membership, pending, message, clockSample, restoring, resumeFailed, sessionEnded, retryResume,
+    createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame, submitImage }
 }

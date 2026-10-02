@@ -3,6 +3,7 @@ import type { GameMachine } from '../game/gameMachine.ts'
 
 export interface ServerPlayer extends Player {
   connectionId: string
+  sessionToken: string
 }
 
 export interface GameRoom {

@@ -3,14 +3,15 @@ import { useState, type FormEvent } from 'react'
 interface HomePageProps {
   connected: boolean
   busy: boolean
+  initialCode?: string
   createRoom: (nickname: string) => Promise<void>
   joinRoom: (nickname: string, code: string) => Promise<void>
 }
 
-export function HomePage({ connected, busy, createRoom, joinRoom }: HomePageProps) {
-  const [mode, setMode] = useState<'create' | 'join'>('create')
+export function HomePage({ connected, busy, createRoom, joinRoom, initialCode = '' }: HomePageProps) {
+  const [mode, setMode] = useState<'create' | 'join'>(initialCode ? 'join' : 'create')
   const [nickname, setNickname] = useState('')
-  const [code, setCode] = useState('')
+  const [code, setCode] = useState(initialCode)
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

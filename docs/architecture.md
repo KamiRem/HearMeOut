@@ -15,7 +15,7 @@ Le navigateur utilise un socket stable créé sans connexion automatique. Un eff
 React gère son ouverture et son nettoyage, y compris sous StrictMode.
 Le hook `useConnection` gère statut et test aller-retour. `useRoom` utilise cette
 même connexion pour les commandes et les snapshots. La reconnexion réseau est
-assurée par Socket.IO ; la reprise de l'identité d'un joueur reste différée.
+assurée par Socket.IO ; `room:resume` restaure l’identité via un jeton privé d’onglet.
 
 ## Contrats réseau actuels
 
@@ -29,6 +29,8 @@ assurée par Socket.IO ; la reprise de l'identité d'un joueur reste différée.
 | Client → serveur | `room:join` | UUID de requête, code et pseudonyme |
 | Client → serveur | `room:leave` | UUID de requête et identifiant du salon |
 | Client → serveur | `room:sync` | UUID de requête ; relire son appartenance actuelle |
+| Client → serveur | `room:resume` | UUID de requête et jeton privé de reprise |
+| Serveur → client | `session:replaced` | Session reprise sur une autre connexion |
 | Client → serveur | `player:ready` | Salon, version des paramètres, booléen Ready |
 | Client → serveur | `room:settings:update` | Salon, version attendue, paramètres complets (Host) |
 | Client → serveur | `game:start` | Salon et version attendue des paramètres (Host) |
@@ -62,7 +64,7 @@ d'adapter cette orchestration et la sérialisation des mutations.
 
 Chaque mutation incrémente la révision. Les snapshots sont construits explicitement
 et ne contiennent ni identifiants de connexion, ni références aux objets internes.
-Créer ou rejoindre renvoie en privé `{ room, playerId, ownSubmission, serverNow }` ; le snapshot du salon
+Créer, rejoindre ou reprendre renvoie en privé `{ room, playerId, sessionToken, ownSubmission, serverNow }` ; le snapshot du salon
 est diffusé uniquement à ses membres. Une sortie désabonne la connexion. Le départ
 du créateur ferme le salon et libère toutes ses appartenances et abonnements.
 
@@ -85,19 +87,19 @@ ne remplace pas une protection globale contre les abus lors d'un déploiement.
 
 ## Limite de reconnexion
 
-À cette étape, toute déconnexion retire le joueur. Le créateur déconnecté ferme
-son salon, sans délai de reprise : le délai de 60 secondes proposé dans la
-conception initiale dépend d'une authentification de reprise qui n'est pas encore
-implémentée. La séparation UUID joueur / connexion permettra de l'introduire
-ultérieurement avec un jeton secret, sans utiliser le code du salon comme preuve
-d'identité. Un redémarrage du serveur perd tous les salons.
+Une déconnexion conserve la place pendant 60 secondes. Le jeton de 256 bits dans
+`sessionStorage` permet de réassocier une nouvelle connexion au même joueur,
+y compris après rechargement. Le code du salon ne prouve jamais l’identité.
+L’expiration retire l’invité ou ferme le salon si le Host est absent ; quitter
+volontairement reste immédiat. Un redémarrage du serveur perd tous les salons.
+Voir [navigation et reprise](navigation.md) pour les limites et les tests.
 
 ## Lobby et lancement
 
 `Player.isReady` est propre au joueur associé à la connexion. `hostPlayerId`
 reste la source unique du rôle Host : aucun booléen Host contrôlable par le
-client. La liste du salon contient uniquement les joueurs encore connectés,
-selon le cycle de déconnexion de l'étape 2.
+client. La liste conserve aussi les joueurs en attente de reprise, avec
+`isConnected: false`. Ils empêchent le lancement tant qu’ils ne sont pas revenus.
 
 Les valeurs initiales et limites de `GameSettings` sont des constantes partagées
 dans `shared/src/lobby.ts` ; les schémas Zod côté serveur imposent les limites
@@ -147,11 +149,11 @@ Les étapes suivantes sépareront les commandes, services métier, moteur de jeu
 et projections publiques. L’attente d’un joueur ayant soumis reste distincte
 de la phase globale. Le serveur est l’autorité pour les échéances ; les scores restent à venir.
 
-React Router, Tailwind, Zustand, Motion, Supabase, PostgreSQL et Prisma ne sont
+Tailwind, Zustand, Motion, Supabase, PostgreSQL et Prisma ne sont
 pas installés comme dépendances. Supabase Storage est utilisé via HTTP natif côté
 serveur ; `sharp` est ajouté pour décoder et réencoder les images. Voir [les images](image-upload.md).
-Les deux vues sont sélectionnées à partir de l'appartenance
-reçue du serveur, sans navigation par URL à ce stade. Le gâteau est une décoration
+React Router sépare `/room/:roomCode` et `/game/:roomCode` selon la phase reçue
+du serveur, avec le socket et `useRoom` conservés au-dessus des routes. Le gâteau est une décoration
 CSS statique, sans mécanique de jeu. Aucune nouvelle dépendance aux étapes 2 à 5.
 
 ## Références

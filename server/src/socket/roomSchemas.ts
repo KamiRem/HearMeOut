@@ -15,6 +15,7 @@ export const joinRoomSchema = z.strictObject({
 })
 export const leaveRoomSchema = z.strictObject({ requestId, roomId: z.uuid() })
 export const syncRoomSchema = z.strictObject({ requestId })
+export const resumeRoomSchema = z.strictObject({ requestId, sessionToken: z.string().regex(/^[a-f0-9]{64}$/) })
 
 const lobbyFields = { requestId, roomId: z.uuid(), settingsRevision: z.number().int().positive() }
 const limits = GAME_SETTINGS_LIMITS

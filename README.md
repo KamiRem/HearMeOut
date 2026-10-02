@@ -6,6 +6,9 @@ départ et liste des joueurs synchronisée, puis le lobby avec Host, Ready,
 paramètres et lancement, la machine à états et la soumission avec timer serveur.
 Les joueurs peuvent sélectionner et envoyer leurs images dans Supabase Storage.
 Les révélations, votes, scores et comptes ne sont pas encore implémentés.
+Le lobby (`/room/:roomCode`) et la partie (`/game/:roomCode`) ont désormais des
+pages séparées. La redirection suit l’état serveur chez tous les joueurs.
+Voir [navigation et reprise de session](docs/navigation.md).
 
 ## Démarrer
 
@@ -157,11 +160,11 @@ privé. La clé reste exclusivement côté serveur. Les fichiers `.env` sont ign
 - Un joueur qui part sans soumettre est retiré des joueurs attendus. Son choix
   reste enregistré s’il avait déjà validé. Le départ du Host annule le timer et
   ferme le salon. Un nouveau round réinitialise les choix et les joueurs attendus.
-- Un rafraîchissement ou une déconnexion retire le joueur lorsque le serveur détecte
-  la coupure. Si c'est le créateur, le salon est fermé. La reconnexion du transport
-  est automatique, mais il faut rejoindre manuellement avec un nouveau joueur
-  tant que le salon n'a pas été lancé.
-  La reprise de session sera traitée dans une étape ultérieure.
+- Un rafraîchissement ou une coupure permet une reprise de session pendant
+  60 secondes après détection de la déconnexion, grâce au jeton privé de l’onglet.
+  Le joueur garde sa place, son rôle et son choix validé ; le timer continue.
+  Après ce délai, l’invité est retiré ; l’absence prolongée du Host ferme le salon.
+  Quitter volontairement invalide la session immédiatement.
 - Les salons sont en mémoire et disparaissent au redémarrage du backend, y compris
   lors d'une modification de son code en développement. Les départs suppriment les
   associations et les salons fermés sont libérés immédiatement.

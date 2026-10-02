@@ -1,33 +1,25 @@
-import { BrandIntro } from './components/BrandIntro'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { useConnection } from './hooks/useConnection'
 import { useRoom } from './hooks/useRoom'
-import { HomePage } from './pages/HomePage'
-import { RoomPage } from './pages/RoomPage'
+import { RoomRoutes } from './RoomRoutes'
 import './App.css'
 
 function App() {
   const { socket, status, probe, ping } = useConnection()
-  const { membership, pending, message, clockSample, createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame, submitImage } = useRoom(socket)
+  const room = useRoom(socket)
+  const { membership, message } = room
+  const inGame = membership && membership.room.state.phase !== 'LOBBY'
   const connected = status === 'connected'
 
   return (
-    <main className={`page ${membership ? 'in-room' : ''}`}>
+    <main className={`page ${inGame ? 'in-game' : membership ? 'in-room' : ''}`}>
       <header className="masthead">
         <span className="wordmark" aria-label="Hear Me Out">hmo<span>.</span></span>
         <ConnectionStatus status={status} />
       </header>
       {message && <p className="room-message" role="alert">{message}</p>}
-      {membership ? (
-        <RoomPage membership={membership} busy={pending !== null} uploading={pending === 'submit'} connected={connected} leaveRoom={leaveRoom}
-          setReady={setReady} updateSettings={updateSettings} startGame={startGame} clockSample={clockSample} submitImage={submitImage} />
-      ) : (
-        <>
-          <BrandIntro />
-          <HomePage connected={connected} busy={pending !== null} createRoom={createRoom} joinRoom={joinRoom} />
-        </>
-      )}
-      <footer>
+      <RoomRoutes room={room} connected={connected} />
+      {!inGame && <footer>
         <p>Ici le footer.</p>
         <details className="connection-diagnostics">
           <summary>Vérifier ma connexion</summary>
@@ -39,7 +31,7 @@ function App() {
             {probe.status === 'error' && 'Pas de confirmation reçue. Tu peux réessayer.'}
           </p>
         </details>
-      </footer>
+      </footer>}
     </main>
   )
 }

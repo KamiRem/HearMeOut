@@ -6,6 +6,7 @@ export interface Player {
   id: string
   nickname: string
   isReady: boolean
+  isConnected: boolean
 }
 
 export interface RoomSnapshot {
@@ -24,6 +25,7 @@ export interface RoomSnapshot {
 export interface RoomMembership {
   room: RoomSnapshot
   playerId: string
+  sessionToken: string
   ownSubmission: OwnSubmission
   serverNow: number
 }

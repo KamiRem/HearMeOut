@@ -28,7 +28,7 @@ export function LobbyControls({ membership: { room, playerId }, disabled, setRea
     voteDuration: String(room.settings.voteDuration),
   }))
   const dirty = fields.some(({ name }) => draft[name] === '' || Number(draft[name]) !== room.settings[name])
-  const readyCount = room.players.filter((player) => player.isReady).length
+  const readyCount = room.players.filter((player) => player.isReady && player.isConnected).length
   const enoughPlayers = room.players.length >= MIN_PLAYERS
   const allReady = readyCount === room.players.length
   const canStart = enoughPlayers && allReady && !dirty && !disabled

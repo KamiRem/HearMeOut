@@ -31,6 +31,14 @@ export function buildApp({ clientOrigin, logger = false, imageStorage }: AppOpti
   const rooms = new RoomService({
     onRoomUpdate: (room, serverNow) => io.to(`room:${room.code}`).emit('room:update', room, serverNow),
     onDiscardImage: (objectKey) => uploads.discard(objectKey),
+    onSessionExpired: (departure) => {
+      const channel = `room:${departure.code}`
+      if (departure.snapshot) io.to(channel).emit('room:update', departure.snapshot, rooms.serverTime())
+      else {
+        io.to(channel).emit('room:closed', { roomId: departure.roomId, reason: 'HOST_DISCONNECTED' })
+        io.in(channel).socketsLeave(channel)
+      }
+    },
   })
   const uploads = new ImageUploadService(rooms, imageStorage, (message) => app.log.warn(message))
   registerHandlers(io, rooms, uploads)

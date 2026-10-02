@@ -2,7 +2,7 @@ import type { Ack, ClientToServerEvents, Result, RoomClosed, RoomMembership, Ser
 import type { Server, Socket } from 'socket.io'
 import type { z } from 'zod'
 import { RoomError, RoomService, type Departure } from '../services/roomService.ts'
-import { createRoomSchema, joinRoomSchema, leaveRoomSchema, readySchema, startGameSchema, prepareImageSchema, syncRoomSchema, updateSettingsSchema } from './roomSchemas.ts'
+import { createRoomSchema, joinRoomSchema, leaveRoomSchema, readySchema, startGameSchema, prepareImageSchema, syncRoomSchema, resumeRoomSchema, updateSettingsSchema } from './roomSchemas.ts'
 import type { ImageUploadService } from '../services/imageUploadService.ts'
 
 type RoomServer = Server<ClientToServerEvents, ServerToClientEvents>
@@ -113,6 +113,17 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
 
   socket.on('room:sync', (payload, ack) => run('room:sync', syncRoomSchema, payload, ack, () => rooms.current(socket.id)))
 
+  socket.on('room:resume', (payload, ack) => run('room:resume', resumeRoomSchema, payload, ack, (command) => {
+    const { membership, previousConnectionId } = rooms.resume(socket.id, command.sessionToken)
+    if (previousConnectionId !== socket.id) {
+      const previous = io.sockets.sockets.get(previousConnectionId)
+      previous?.emit('session:replaced')
+      previous?.disconnect(true)
+    }
+    void socket.join(`room:${membership.room.code}`)
+    return publishLobby(membership)
+  }))
+
   function publishLobby(membership: RoomMembership) {
     io.to(`room:${membership.room.code}`).emit('room:update', membership.room, rooms.serverTime())
     return membership
@@ -131,7 +142,7 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
     uploads.prepare(socket.id, command)))
 
   socket.on('disconnect', () => {
-    publishDeparture(rooms.leave(socket.id), 'HOST_DISCONNECTED')
+    rooms.disconnect(socket.id)
     requests.clear()
   })
 }

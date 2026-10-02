@@ -61,5 +61,6 @@ reste `SUBMISSION` jusqu’à sa clôture. À zéro, les actions sont désactiv�
 client attend le snapshot serveur. Un nouveau round recrée ce composant.
 
 Cette version s’arrête après les soumissions : aucun gâteau interactif,
-vote ou enchaînement automatique des rounds. La reprise de session après une
-déconnexion reste prévue à l’étape 11.
+vote ou enchaînement automatique des rounds. La [reprise de session](navigation.md)
+conserve désormais la place et l’image validée pendant 60 secondes après une
+déconnexion détectée ; le délai de soumission continue à s’écouler.
