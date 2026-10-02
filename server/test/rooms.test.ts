@@ -60,59 +60,6 @@ function closed(socket: Client) {
   return new Promise<RoomClosed>((resolve) => socket.once('room:closed', resolve))
 }
 
-test('submission commands are validated, private and idempotent; completion reaches both clients', { timeout: 10_000 }, async (t) => {
-  const connect = await setup(t)
-  const host = await connect()
-  const guest = await connect()
-  const stranger = await connect()
-  const { room } = value(await create(host))
-  value(await join(guest, room.code))
-  for (const client of [host, guest]) {
-    value(await client.timeout(2000).emitWithAck('player:ready', {
-      requestId: randomUUID(), roomId: room.id, settingsRevision: 1, isReady: true,
-    }))
-  }
-  const started = value<RoomMembership>(await host.timeout(2000).emitWithAck('game:start', {
-    requestId: randomUUID(), roomId: room.id, settingsRevision: 1,
-  }))
-  const state = started.room.state
-  assert.ok(state.phase === 'SUBMISSION')
-  const command = {
-    requestId: randomUUID(), roomId: room.id, gameId: state.id, roundId: state.roundId, choiceId: 'robot' as const,
-  }
-  failure(await stranger.timeout(2000).emitWithAck('round:submit', command), 'NOT_A_MEMBER')
-  const spoofed = { ...command, playerId: started.playerId }
-  failure(await host.timeout(2000).emitWithAck('round:submit', spoofed), 'INVALID_PAYLOAD')
-  // @ts-expect-error The network can carry invalid choices.
-  failure(await host.timeout(2000).emitWithAck('round:submit', { ...command, choiceId: 'http://image' }), 'INVALID_PAYLOAD')
-  // @ts-expect-error Commands without an acknowledgement must not mutate the room.
-  host.emit('round:submit', command)
-  assert.equal(value(await sync(host))?.room.submissionProgress?.submitted, 0)
-  const guestUpdate = update(guest)
-  const confirmed = value<RoomMembership>(await host.timeout(2000).emitWithAck('round:submit', command))
-  const visible = await guestUpdate
-  assert.equal(visible.submissionProgress?.submitted, 1)
-  assert.equal(JSON.stringify(visible).includes('robot'), false)
-  assert.equal(confirmed.ownSubmission.choiceId, 'robot')
-  assert.equal(value(await sync(guest))?.ownSubmission.choiceId, null)
-  const broadcasts: RoomSnapshot[] = []
-  host.on('room:update', (snapshot) => broadcasts.push(snapshot))
-  assert.deepEqual(value(await host.timeout(2000).emitWithAck('round:submit', command)), confirmed)
-  failure(await host.timeout(2000).emitWithAck('round:submit', { ...command, choiceId: 'ghost' }), 'REQUEST_CONFLICT')
-  failure(await host.timeout(2000).emitWithAck('round:submit', { ...command, requestId: randomUUID() }), 'ALREADY_SUBMITTED')
-  assert.deepEqual(broadcasts, [])
-  const hostEnd = update(host)
-  const guestEnd = update(guest)
-  const ended = value<RoomMembership>(await guest.timeout(2000).emitWithAck('round:submit', {
-    ...command, requestId: randomUUID(), choiceId: 'dragon',
-  }))
-  assert.equal(ended.room.state.phase, 'WAITING')
-  assert.deepEqual(await hostEnd, ended.room)
-  assert.deepEqual(await guestEnd, ended.room)
-  assert.equal(ended.ownSubmission.choiceId, 'dragon')
-  assert.equal(value(await sync(host))?.ownSubmission.choiceId, 'robot')
-})
-
 test('create and join broadcast the same roster without exposing connection ids', { timeout: 10_000 }, async (t) => {
   const connect = await setup(t)
   const host = await connect()

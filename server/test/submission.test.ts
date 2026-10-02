@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { test, type TestContext } from 'node:test'
-import type { ChoiceId, ErrorCode, RoomSnapshot, SubmissionCommand } from '@hear-me-out/shared'
+import type { ErrorCode, RoomSnapshot, SubmissionScope } from '@hear-me-out/shared'
 import { RoomError, RoomService, type SubmissionClock } from '../src/services/roomService.ts'
+import type { StoredImage } from '../src/models/room.ts'
+
+function submit(rooms: RoomService, connection: string, command: SubmissionScope & { image: StoredImage }) {
+  return rooms.submit(connection, command, command.image)
+}
 
 class FakeClock implements SubmissionClock {
   time = 1000
@@ -38,8 +43,9 @@ function setup(t: TestContext, guests = 1) {
   const started = rooms.startGame('host', room.id, 2)
   const state = started.room.state
   assert.ok(state.phase === 'SUBMISSION')
-  const command = (choiceId: ChoiceId = 'robot'): SubmissionCommand => ({
-    requestId: randomUUID(), roomId: room.id, gameId: state.id, roundId: state.roundId, choiceId,
+  const command = (id = 'robot'): SubmissionScope & { image: StoredImage } => ({
+    roomId: room.id, gameId: state.id, roundId: state.roundId,
+    image: { id, objectKey: `${id}.webp`, previewUrl: `https://storage.example/${id}`, width: 10, height: 10 },
   })
   return { rooms, clock, published, started, command }
 }
@@ -53,17 +59,18 @@ test('submission locks privately, exposes only counts and ends early for every p
   assert.equal(started.serverNow, 1000)
   assert.ok(started.room.state.phase === 'SUBMISSION')
   assert.equal(started.room.state.deadlineAt, 16000)
-  const first = rooms.submit('host', command())
-  assert.equal(first.ownSubmission.choiceId, 'robot')
+  const first = submit(rooms, 'host', command())
+  assert.equal(first.ownSubmission.image?.id, 'robot')
+  assert.equal('objectKey' in first.ownSubmission.image!, false)
   assert.equal(first.room.state.phase, 'SUBMISSION')
   assert.equal(first.room.submissionProgress?.submitted, 1)
   const guest = rooms.current('guest0')!
-  assert.equal(guest.ownSubmission.choiceId, null)
+  assert.equal(guest.ownSubmission.image, null)
   assert.equal(JSON.stringify(guest).includes('robot'), false)
   assert.equal('submissions' in first.room, false)
-  assert.throws(() => rooms.submit('host', command('ghost')), error('ALREADY_SUBMITTED'))
+  assert.throws(() => submit(rooms, 'host', command('ghost')), error('ALREADY_SUBMITTED'))
   assert.deepEqual(rooms.current('host'), first)
-  const ended = rooms.submit('guest0', command('dragon'))
+  const ended = submit(rooms, 'guest0', command('dragon'))
   assert.equal(ended.room.state.phase, 'WAITING')
   assert.equal(ended.room.submissionProgress?.submitted, 2)
   assert.equal('deadlineAt' in ended.room.state, false)
@@ -71,12 +78,12 @@ test('submission locks privately, exposes only counts and ends early for every p
   assert.equal(clock.pending, 0)
   clock.advance(15000)
   assert.deepEqual(published, [])
-  assert.throws(() => rooms.submit('guest0', command()), error('INVALID_PHASE'))
+  assert.throws(() => submit(rooms, 'guest0', command()), error('INVALID_PHASE'))
 })
 
 test('server expiration closes a partially filled round and broadcasts exactly once', (t) => {
   const { rooms, clock, published, command } = setup(t)
-  rooms.submit('host', command())
+  submit(rooms, 'host', command())
   clock.advance(14999)
   assert.equal(rooms.current('host')?.room.state.phase, 'SUBMISSION')
   clock.advance(1)
@@ -90,9 +97,9 @@ test('server expiration closes a partially filled round and broadcasts exactly o
 test('late commands cannot beat a delayed timer, including at the exact deadline', (t) => {
   const { rooms, clock, published, command } = setup(t)
   clock.time = 16000 // Simulate a busy event loop: the timer callback has not run.
-  assert.throws(() => rooms.submit('host', command()), error('DEADLINE_EXPIRED'))
+  assert.throws(() => submit(rooms, 'host', command()), error('DEADLINE_EXPIRED'))
   assert.equal(rooms.current('host')?.room.state.phase, 'ROUND_RESULTS')
-  assert.equal(rooms.current('host')?.ownSubmission.choiceId, null)
+  assert.equal(rooms.current('host')?.ownSubmission.image, null)
   assert.equal(published.length, 1)
   clock.tasks[0]!.callback()
   assert.equal(published.length, 1)
@@ -107,20 +114,18 @@ test('an empty round expires without inventing submissions', (t) => {
   assert.equal(clock.pending, 0)
 })
 
-test('nonmembers, wrong room/game/round and unknown choices cannot submit', (t) => {
+test('nonmembers and commands for another room/game/round cannot submit', (t) => {
   const { rooms, command, started } = setup(t)
-  assert.throws(() => rooms.submit('intruder', command()), error('NOT_A_MEMBER'))
-  assert.throws(() => rooms.submit('host', { ...command(), roomId: randomUUID() }), error('NOT_A_MEMBER'))
-  assert.throws(() => rooms.submit('host', { ...command(), gameId: randomUUID() }), error('STALE_ROUND'))
-  assert.throws(() => rooms.submit('host', { ...command(), roundId: randomUUID() }), error('STALE_ROUND'))
-  // @ts-expect-error Simulate an invalid caller beyond the typed boundary.
-  assert.throws(() => rooms.submit('host', { ...command(), choiceId: 'unknown' }), error('INVALID_PAYLOAD'))
+  assert.throws(() => submit(rooms, 'intruder', command()), error('NOT_A_MEMBER'))
+  assert.throws(() => submit(rooms, 'host', { ...command(), roomId: randomUUID() }), error('NOT_A_MEMBER'))
+  assert.throws(() => submit(rooms, 'host', { ...command(), gameId: randomUUID() }), error('STALE_ROUND'))
+  assert.throws(() => submit(rooms, 'host', { ...command(), roundId: randomUUID() }), error('STALE_ROUND'))
   assert.deepEqual(rooms.current('host'), started)
 })
 
 test('departing players without a choice stop blocking completion', (t) => {
   const { rooms, clock, command } = setup(t)
-  rooms.submit('host', command())
+  submit(rooms, 'host', command())
   const departure = rooms.leave('guest0')!
   assert.equal(departure.snapshot?.state.phase, 'WAITING')
   assert.equal(departure.snapshot?.submissionProgress?.expected, 1)
@@ -129,19 +134,19 @@ test('departing players without a choice stop blocking completion', (t) => {
 
 test('a validated choice survives its author leaving, while remaining players may submit', (t) => {
   const { rooms, command } = setup(t, 2)
-  rooms.submit('guest0', command('ghost'))
+  submit(rooms, 'guest0', command('ghost'))
   const departure = rooms.leave('guest0')!
   assert.equal(departure.snapshot?.state.phase, 'SUBMISSION')
   assert.equal(departure.snapshot?.submissionProgress?.expected, 3)
   assert.equal(departure.snapshot?.submissionProgress?.submitted, 1)
-  rooms.submit('host', command())
-  assert.equal(rooms.submit('guest1', command('dragon')).room.state.phase, 'WAITING')
+  submit(rooms, 'host', command())
+  assert.equal(submit(rooms, 'guest1', command('dragon')).room.state.phase, 'WAITING')
 })
 
 test('new rounds reset private choices and old timer callbacks cannot close them', (t) => {
   const { rooms, clock, command, started, published } = setup(t)
   const oldCallback = clock.tasks[0]!.callback
-  rooms.submit('host', command())
+  submit(rooms, 'host', command())
   const state = started.room.state
   assert.ok(state.phase === 'SUBMISSION')
   const results = rooms.advanceGame(started.room.id, {
@@ -153,10 +158,10 @@ test('new rounds reset private choices and old timer callbacks cannot close them
     nextRoundId, deadlineAt: 31000,
   })
   assert.equal(next.submissionProgress?.submitted, 0)
-  assert.deepEqual(rooms.current('host')?.ownSubmission, { roundId: nextRoundId, choiceId: null })
+  assert.deepEqual(rooms.current('host')?.ownSubmission, { roundId: nextRoundId, image: null })
   oldCallback()
   assert.deepEqual(rooms.current('host')?.room, next)
-  assert.throws(() => rooms.submit('host', command()), error('STALE_ROUND'))
+  assert.throws(() => submit(rooms, 'host', command()), error('STALE_ROUND'))
   assert.equal(clock.pending, 1)
   clock.advance(30000)
   assert.equal(published.length, 1)

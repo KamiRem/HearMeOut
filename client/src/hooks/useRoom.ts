@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ChoiceId, GameSettings, Result, RoomMembership, RoomSnapshot } from '@hear-me-out/shared'
+import type { GameSettings, Result, RoomMembership, RoomSnapshot } from '@hear-me-out/shared'
 import type { ServerClockSample } from './useCountdown'
 import type { createSocket } from '../services/socket'
 
@@ -19,6 +19,7 @@ export function useRoom(socket: ClientSocket | null) {
   const lastClosedRoomId = useRef<string | null>(null)
   const activeSocket = useRef(socket)
   const operation = useRef<{ action: Action; connectionId: string } | null>(null)
+  const uploadController = useRef<AbortController | null>(null)
 
   function acceptMembership(next: RoomMembership | null) {
     if (!next) {
@@ -48,6 +49,7 @@ export function useRoom(socket: ClientSocket | null) {
     }
 
     function onClosed({ roomId }: { roomId: string }) {
+      uploadController.current?.abort()
       lastClosedRoomId.current = roomId
       latestRoom.current = null
       setMembership(null)
@@ -57,6 +59,7 @@ export function useRoom(socket: ClientSocket | null) {
     }
 
     function onDisconnect() {
+      uploadController.current?.abort()
       if (latestRoom.current) setMessage('Connexion interrompue. Rejoins le salon une fois reconnecté.')
       latestRoom.current = null
       lastClosedRoomId.current = null
@@ -70,6 +73,7 @@ export function useRoom(socket: ClientSocket | null) {
     socket.on('room:closed', onClosed)
     socket.on('disconnect', onDisconnect)
     return () => {
+      uploadController.current?.abort()
       activeSocket.current = null
       socket.off('room:update', onUpdate)
       socket.off('room:closed', onClosed)
@@ -169,14 +173,30 @@ export function useRoom(socket: ClientSocket | null) {
     }))
   }
 
-  function submitChoice(choiceId: ChoiceId) {
+  function submitImage(file: File) {
     if (!membership || membership.room.state.phase !== 'SUBMISSION') return
     const { room } = membership
     const state = membership.room.state
-    return request('submit', (client) => client.timeout(5000).emitWithAck('round:submit', {
-      requestId: crypto.randomUUID(), roomId: room.id, gameId: state.id, roundId: state.roundId, choiceId,
-    }))
+    return request('submit', async (client) => {
+      const controller = new AbortController()
+      uploadController.current = controller
+      try {
+        const ticket = await client.timeout(5000).emitWithAck('image:prepare', {
+          requestId: crypto.randomUUID(), roomId: room.id, gameId: state.id, roundId: state.roundId,
+        })
+        if (!ticket.ok) return ticket
+        controller.signal.throwIfAborted()
+        const response = await fetch('/api/images', {
+          method: 'POST', body: file,
+          headers: { 'Content-Type': file.type, Authorization: `Bearer ${ticket.data.token}` },
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
+        })
+        return await response.json() as Result<RoomMembership>
+      } finally {
+        if (uploadController.current === controller) uploadController.current = null
+      }
+    })
   }
 
-  return { membership, pending, message, clockSample, createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame, submitChoice }
+  return { membership, pending, message, clockSample, createRoom, joinRoom, leaveRoom, setReady, updateSettings, startGame, submitImage }
 }

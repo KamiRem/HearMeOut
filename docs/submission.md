@@ -1,4 +1,4 @@
-# Soumission — étape 5
+# Soumission — étapes 5 et 6
 
 Le lancement ouvre `SUBMISSION` avec une échéance absolue `deadlineAt`, calculée
 sur l’horloge serveur à partir de `submissionDuration`. La machine reste pure :
@@ -6,26 +6,25 @@ les événements internes `START_GAME` et `NEXT_ROUND` lui fournissent cette éc
 
 ## Commande et données
 
-`round:submit` reçoit `{ requestId, roomId, gameId, roundId, choiceId }`. Le schéma
-Zod strict refuse les champs supplémentaires, notamment un auteur fourni par le
-client. Le service retrouve le joueur grâce à sa connexion et vérifie salon,
-partie, round, phase, échéance, participation et absence de choix déjà validé.
-
-Les trois choix d’exemple sont définis dans `shared/src/submission.ts`. Ils servent
-à tester la boucle sans simuler un upload. L’étape 6 remplacera cette référence
-par celle d’un fichier validé et stocké dans un stockage d’objets.
+`image:prepare` reçoit `{ requestId, roomId, gameId, roundId }`. Le schéma Zod strict
+refuse les champs supplémentaires, notamment un auteur fourni par le client.
+Le service retrouve le joueur grâce à sa connexion et vérifie salon, partie,
+round, phase, échéance, participation et absence de choix déjà validé.
+Le jeton privé obtenu autorise un `POST /api/images`. Après validation du fichier
+et stockage, le serveur applique `RoomService.submit` en interne. L’ancien événement
+`round:submit` et les choix d’exemple ont été supprimés. Voir [les images](image-upload.md).
 
 Le modèle serveur `SubmissionRound` contient les joueurs attendus et les
 `Submission` indexées par auteur. Chaque soumission reçoit son propre UUID,
-le round, l’auteur, le choix et l’heure de validation. Le snapshot public expose
+le round, l’auteur, la référence d’image et l’heure de validation. Le snapshot public expose
 uniquement `{ roundId, submitted, expected }` dans `submissionProgress`.
-L’accusé privé et `room:sync` renvoient `ownSubmission: { roundId, choiceId }` :
-`choiceId: null` indique que le joueur n’a pas encore validé pour ce round.
+La réponse HTTP privée et `room:sync` renvoient `ownSubmission: { roundId, image }` :
+`image: null` indique que le joueur n’a pas encore validé pour ce round.
 Les choix et leurs auteurs ne sont jamais diffusés au salon.
 
-Le cache d’idempotence existant s’applique : rejouer la même requête renvoie le
-même accusé sans nouvelle mutation ; changer son contenu est refusé. Une seconde
-validation avec une autre requête ne peut pas remplacer le choix verrouillé.
+Le cache d’idempotence s’applique à la préparation du jeton. L’envoi HTTP consomme
+ce jeton une seule fois ; `room:sync` réconcilie une réponse d’envoi incertaine.
+Une seconde validation ne peut pas remplacer le choix verrouillé.
 
 ## Timer et clôture
 
@@ -61,6 +60,6 @@ il affiche le choix verrouillé et l’attente individuelle ; la phase du salon
 reste `SUBMISSION` jusqu’à sa clôture. À zéro, les actions sont désactivées et le
 client attend le snapshot serveur. Un nouveau round recrée ce composant.
 
-Cette version s’arrête après les soumissions : aucun upload, gâteau interactif,
+Cette version s’arrête après les soumissions : aucun gâteau interactif,
 vote ou enchaînement automatique des rounds. La reprise de session après une
 déconnexion reste prévue à l’étape 11.

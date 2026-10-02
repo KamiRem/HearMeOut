@@ -91,13 +91,14 @@ son échéance `deadlineAt`, retirée des phases suivantes. Seules `REVEAL`,
 `projectGameState` construit le contrat public champ par champ : une phase d'attente
 ne révèle aucune soumission future et une révélation n'expose que la soumission
 courante. Les choix et auteurs sont conservés dans `SubmissionRound` côté serveur,
-jamais dans la machine publique. Aucun fichier, URL ou vote n’est encore modélisé.
+jamais dans la machine publique. La référence de l’image stockée appartient à la
+soumission privée ; aucun vote n’est encore modélisé.
 
 ## Limites observables de cette étape
 
 Après lancement, les clients affichent le round 1 en phase `SUBMISSION` avec un
-compte à rebours et des choix d’exemple. La validation de tous les joueurs ou
+compte à rebours et un sélecteur d’image. La validation de tous les joueurs ou
 l’échéance clôture cette phase. La partie reste ensuite à `WAITING`, ou à
 `ROUND_RESULTS` si aucun choix n’a été validé. Voir [la soumission](submission.md).
-Les uploads, révélations visuelles, votes et enchaînements de rounds viendront
+L’upload est raccordé depuis l’étape 6. Les révélations visuelles, votes et enchaînements de rounds viendront
 aux étapes suivantes ; ces dernières transitions restent testées dans le moteur.

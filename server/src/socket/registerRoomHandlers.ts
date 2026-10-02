@@ -2,7 +2,8 @@ import type { Ack, ClientToServerEvents, Result, RoomClosed, RoomMembership, Ser
 import type { Server, Socket } from 'socket.io'
 import type { z } from 'zod'
 import { RoomError, RoomService, type Departure } from '../services/roomService.ts'
-import { createRoomSchema, joinRoomSchema, leaveRoomSchema, readySchema, startGameSchema, submitSchema, syncRoomSchema, updateSettingsSchema } from './roomSchemas.ts'
+import { createRoomSchema, joinRoomSchema, leaveRoomSchema, readySchema, startGameSchema, prepareImageSchema, syncRoomSchema, updateSettingsSchema } from './roomSchemas.ts'
+import type { ImageUploadService } from '../services/imageUploadService.ts'
 
 type RoomServer = Server<ClientToServerEvents, ServerToClientEvents>
 type RoomSocket = Socket<ClientToServerEvents, ServerToClientEvents>
@@ -12,7 +13,7 @@ interface CachedRequest {
   membershipRoomId?: string
 }
 
-export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: RoomService) {
+export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: RoomService, uploads: ImageUploadService) {
   // These bounded, connection-local caches are discarded on disconnect.
   const requests = new Map<string, CachedRequest>()
   let windowStartedAt = Date.now()
@@ -126,8 +127,8 @@ export function registerRoomHandlers(io: RoomServer, socket: RoomSocket, rooms: 
   socket.on('game:start', (payload, ack) => run('game:start', startGameSchema, payload, ack, (command) =>
     publishLobby(rooms.startGame(socket.id, command.roomId, command.settingsRevision))))
 
-  socket.on('round:submit', (payload, ack) => run('round:submit', submitSchema, payload, ack, (command) =>
-    publishLobby(rooms.submit(socket.id, command))))
+  socket.on('image:prepare', (payload, ack) => run('image:prepare', prepareImageSchema, payload, ack, (command) =>
+    uploads.prepare(socket.id, command)))
 
   socket.on('disconnect', () => {
     publishDeparture(rooms.leave(socket.id), 'HOST_DISCONNECTED')

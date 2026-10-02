@@ -1,11 +1,11 @@
 # Hear Me Out Cake
 
-Application multijoueur développée par étapes. Les étapes 1 à 5 fournissent le
+Application multijoueur développée par étapes. Les étapes 1 à 6 fournissent le
 monorepo, la connexion Socket.IO typée et les salons privés : création, jonction,
 départ et liste des joueurs synchronisée, puis le lobby avec Host, Ready,
 paramètres et lancement, la machine à états et la soumission avec timer serveur.
-Les choix sont provisoirement des exemples intégrés ; l’upload d’images vient à
-l’étape 6. Les révélations, votes, scores et comptes ne sont pas encore implémentés.
+Les joueurs peuvent sélectionner et envoyer leurs images dans Supabase Storage.
+Les révélations, votes, scores et comptes ne sont pas encore implémentés.
 
 ## Démarrer
 
@@ -18,7 +18,8 @@ npm run dev
 ```
 
 Ouvrir **http://localhost:5173**. Aucun fichier `.env` n'est nécessaire pour
-le démarrage local. Le statut doit devenir « Connecté au serveur ». Saisir un
+le démarrage du lobby. **L’upload nécessite la configuration Supabase** décrite
+dans [le guide des images](docs/image-upload.md). Le statut doit devenir « Connecté au serveur ». Saisir un
 pseudo et créer un salon ; dans un autre onglet, choisir « Rejoindre » puis
 entrer un autre pseudo et le code affiché. Les deux listes se mettent à jour.
 Le diagnostic « Vérifier ma connexion » reste accessible en bas de page.
@@ -78,8 +79,9 @@ différente lorsque 5173 est occupé. Utiliser l'adresse `localhost` documentée
 pas `127.0.0.1` dans le navigateur, sauf à changer `CLIENT_ORIGIN`.
 
 Le frontend utilise la même origine et le proxy Vite pour les deux transports
-Socket.IO : HTTP polling et WebSocket. Aucune clé ou adresse de stockage n'est
-nécessaire à cette étape. Les fichiers `.env` sont ignorés par Git.
+Socket.IO : HTTP polling et WebSocket. Pour l’upload, renseigner `SUPABASE_URL`,
+`SUPABASE_SECRET_KEY` et `SUPABASE_STORAGE_BUCKET` dans `server/.env`, avec un bucket
+privé. La clé reste exclusivement côté serveur. Les fichiers `.env` sont ignorés par Git.
 
 ## Vérification manuelle
 
@@ -117,9 +119,10 @@ nécessaire à cette étape. Les fichiers `.env` sont ignorés par Git.
 
 1. Choisir une durée de 15 secondes dans le lobby pour un test rapide, puis lancer
    avec deux joueurs prêts. Les deux onglets affichent le compte à rebours.
-2. Sélectionner un choix d’exemple, puis « Valider mon Hear Me Out ». Le choix est
-   verrouillé et « En attente des autres joueurs… » apparaît. L’autre onglet voit
-   uniquement le compteur de choix validés, sans connaître le choix de son voisin.
+2. Sélectionner ou déposer un JPEG, PNG ou WebP (5 Mio maximum), vérifier l’aperçu,
+   puis cliquer « Valider mon Hear Me Out ». Après confirmation de l’envoi, le
+   choix est verrouillé et « En attente des autres joueurs… » apparaît. L’autre
+   onglet voit uniquement le compteur de choix validés, sans connaître l’image.
 3. Valider le second choix avant la fin du délai : les deux onglets passent à
    « En attente des révélations ». Le timer est annulé côté serveur.
 4. Recréer un salon et ne valider qu’un choix : au bout des 15 secondes, les deux
@@ -178,6 +181,7 @@ des timers et la validation via Socket.IO. Les phases suivantes restent exercée
 par des événements internes dans les tests du moteur.
 
 Voir [la machine à états](docs/game-state-machine.md) pour le graphe des transitions
-et [la soumission](docs/submission.md) pour les règles et limites de l’étape 5.
+et [la soumission](docs/submission.md) pour les règles du timer. Le [guide des images](docs/image-upload.md)
+décrit la configuration, les validations et le nettoyage de l’étape 6.
 
 Voir [les conventions](docs/conventions.md) et [l'architecture](docs/architecture.md).

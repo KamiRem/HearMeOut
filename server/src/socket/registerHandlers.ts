@@ -2,16 +2,14 @@ import type { ClientToServerEvents, ServerToClientEvents } from '@hear-me-out/sh
 import type { Server } from 'socket.io'
 import { z } from 'zod'
 import { RoomService } from '../services/roomService.ts'
+import type { ImageUploadService } from '../services/imageUploadService.ts'
 import { registerRoomHandlers } from './registerRoomHandlers.ts'
 
 const pingSchema = z.strictObject({ requestId: z.uuid() })
 
-export function registerHandlers(io: Server<ClientToServerEvents, ServerToClientEvents>) {
-  const rooms = new RoomService({
-    onRoomUpdate: (room, serverNow) => io.to(`room:${room.code}`).emit('room:update', room, serverNow),
-  })
+export function registerHandlers(io: Server<ClientToServerEvents, ServerToClientEvents>, rooms: RoomService, uploads: ImageUploadService) {
   io.on('connection', (socket) => {
-    registerRoomHandlers(io, socket, rooms)
+    registerRoomHandlers(io, socket, rooms, uploads)
     socket.emit('connection:welcome', { protocolVersion: 1, serverNow: Date.now() })
 
     socket.on('connection:ping', (payload, ack) => {
@@ -27,5 +25,4 @@ export function registerHandlers(io: Server<ClientToServerEvents, ServerToClient
       ack({ ok: true, data: { requestId: result.data.requestId, serverNow: Date.now() } })
     })
   })
-  return () => rooms.dispose()
 }

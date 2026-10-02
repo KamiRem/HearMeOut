@@ -1,8 +1,13 @@
 import { buildApp } from './app.ts'
 import { readConfig } from './config.ts'
+import { SupabaseImageStorage } from './storage/imageStorage.ts'
 
 const config = readConfig()
-const app = buildApp({ clientOrigin: config.CLIENT_ORIGIN, logger: true })
+const imageStorage = config.SUPABASE_URL && config.SUPABASE_SECRET_KEY && config.SUPABASE_STORAGE_BUCKET
+  ? new SupabaseImageStorage({ url: config.SUPABASE_URL, key: config.SUPABASE_SECRET_KEY, bucket: config.SUPABASE_STORAGE_BUCKET })
+  : undefined
+const app = buildApp({ clientOrigin: config.CLIENT_ORIGIN, logger: true, imageStorage })
+if (!imageStorage) app.log.warn('Image upload disabled: configure Supabase in server/.env')
 
 let shuttingDown = false
 async function shutdown() {

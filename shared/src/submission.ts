@@ -1,23 +1,35 @@
-// Temporary choices to exercise submission before image upload (step 6).
-export const DEMO_CHOICES = [
-  { id: 'robot', label: 'Le robot', symbol: '🤖' },
-  { id: 'dragon', label: 'Le dragon', symbol: '🐉' },
-  { id: 'ghost', label: 'Le fantôme', symbol: '👻' },
-] as const
+export const IMAGE_LIMITS = {
+  maxBytes: 5 * 1024 * 1024,
+  maxPixels: 20_000_000,
+  maxDimension: 2048,
+  mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+} as const
 
-export type ChoiceId = typeof DEMO_CHOICES[number]['id']
-
-export interface SubmissionCommand {
-  requestId: string
+export interface SubmissionScope {
   roomId: string
   gameId: string
   roundId: string
-  choiceId: ChoiceId
+}
+
+export interface PrepareImageCommand extends SubmissionScope {
+  requestId: string
+}
+
+export interface ImageUploadTicket {
+  token: string
+  expiresAt: number
+}
+
+export interface SubmissionImage {
+  id: string
+  previewUrl: string
+  width: number
+  height: number
 }
 
 export interface OwnSubmission {
   roundId: string | null
-  choiceId: ChoiceId | null
+  image: SubmissionImage | null
 }
 
 export interface SubmissionProgress {

@@ -19,5 +19,5 @@ export type {
 export { DEFAULT_GAME_SETTINGS, GAME_SETTINGS_LIMITS, MIN_PLAYERS } from './lobby.ts'
 export type { GameSettings, LobbyCommand, ReadyCommand, UpdateSettingsCommand } from './lobby.ts'
 export type { GameState, GamePhase } from './game.ts'
-export { DEMO_CHOICES } from './submission.ts'
-export type { ChoiceId, SubmissionCommand, OwnSubmission, SubmissionProgress } from './submission.ts'
+export { IMAGE_LIMITS } from './submission.ts'
+export type { SubmissionScope, PrepareImageCommand, ImageUploadTicket, SubmissionImage, OwnSubmission, SubmissionProgress } from './submission.ts'

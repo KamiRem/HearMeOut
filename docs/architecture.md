@@ -1,4 +1,4 @@
-# Architecture — étapes 1 à 5
+# Architecture — étapes 1 à 6
 
 ## Socle implémenté
 
@@ -32,7 +32,8 @@ assurée par Socket.IO ; la reprise de l'identité d'un joueur reste différée.
 | Client → serveur | `player:ready` | Salon, version des paramètres, booléen Ready |
 | Client → serveur | `room:settings:update` | Salon, version attendue, paramètres complets (Host) |
 | Client → serveur | `game:start` | Salon et version attendue des paramètres (Host) |
-| Client → serveur | `round:submit` | Salon, partie, round et choix d’exemple |
+| Client → serveur | `image:prepare` | Salon, partie, round ; retourne un jeton privé d’upload |
+| HTTP | `POST /api/images` | Image brute + jeton ; valide, stocke et verrouille la soumission |
 | Serveur → salon | `room:update` | Snapshot public versionné et heure serveur |
 | Serveur → salon | `room:closed` | Identifiant du salon et motif de fermeture |
 
@@ -139,7 +140,7 @@ L'ordre des soumissions et l'index de révélation restent dans `GameMachine` c�
 `projectGameState` expose uniquement les champs publics autorisés.
 
 La [phase de soumission avec timer](submission.md) est raccordée : stockage privé
-des choix d’exemple, progression agrégée et accusé personnel, clôture anticipée
+des images, progression agrégée et accusé personnel, clôture anticipée
 ou à échéance. Les autres contrats métier seront introduits lorsqu’ils deviennent nécessaires.
 
 Les étapes suivantes sépareront les commandes, services métier, moteur de jeu
@@ -147,7 +148,9 @@ et projections publiques. L’attente d’un joueur ayant soumis reste distincte
 de la phase globale. Le serveur est l’autorité pour les échéances ; les scores restent à venir.
 
 React Router, Tailwind, Zustand, Motion, Supabase, PostgreSQL et Prisma ne sont
-pas encore installés. Les deux vues sont sélectionnées à partir de l'appartenance
+pas installés comme dépendances. Supabase Storage est utilisé via HTTP natif côté
+serveur ; `sharp` est ajouté pour décoder et réencoder les images. Voir [les images](image-upload.md).
+Les deux vues sont sélectionnées à partir de l'appartenance
 reçue du serveur, sans navigation par URL à ce stade. Le gâteau est une décoration
 CSS statique, sans mécanique de jeu. Aucune nouvelle dépendance aux étapes 2 à 5.
 

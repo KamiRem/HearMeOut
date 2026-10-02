@@ -1,4 +1,4 @@
-import type { ChoiceId, RoomMembership } from '@hear-me-out/shared'
+import type { RoomMembership } from '@hear-me-out/shared'
 import { LobbyControls, type LobbyActions } from '../components/LobbyControls'
 import { GamePhasePanel } from '../components/GamePhasePanel'
 import { SubmissionPanel } from '../components/SubmissionPanel'
@@ -7,13 +7,14 @@ import type { ServerClockSample } from '../hooks/useCountdown'
 interface RoomPageProps extends LobbyActions {
   membership: RoomMembership
   busy: boolean
+  uploading: boolean
   connected: boolean
   leaveRoom: () => Promise<void> | undefined
   clockSample: ServerClockSample | null
-  submitChoice: (choiceId: ChoiceId) => Promise<void> | undefined
+  submitImage: (file: File) => Promise<void> | undefined
 }
 
-export function RoomPage({ membership, busy, connected, leaveRoom, setReady, updateSettings, startGame, clockSample, submitChoice }: RoomPageProps) {
+export function RoomPage({ membership, busy, uploading, connected, leaveRoom, setReady, updateSettings, startGame, clockSample, submitImage }: RoomPageProps) {
   const { room, playerId } = membership
   const isCreator = room.hostPlayerId === playerId
   const inLobby = room.state.phase === 'LOBBY'
@@ -44,7 +45,7 @@ export function RoomPage({ membership, busy, connected, leaveRoom, setReady, upd
       {inLobby && room.players.length === 1 && <p className="field-hint">Tu es le premier arrivé. Invites tes potes !</p>}
       {room.state.phase === 'SUBMISSION' ? (
         <SubmissionPanel key={room.state.roundId} state={room.state} ownSubmission={membership.ownSubmission}
-          progress={room.submissionProgress} clockSample={clockSample} disabled={busy || !connected} submitChoice={submitChoice} />
+          progress={room.submissionProgress} clockSample={clockSample} disabled={busy || !connected} uploading={uploading} submitImage={submitImage} />
       ) : room.state.phase !== 'LOBBY' ? (
         <GamePhasePanel state={room.state} submitted={room.submissionProgress?.submitted ?? 0} />
       ) : (

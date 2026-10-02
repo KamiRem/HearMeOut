@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto'
-import { DEFAULT_GAME_SETTINGS, DEMO_CHOICES, MIN_PLAYERS } from '@hear-me-out/shared'
-import type { ErrorCode, GameSettings, RoomMembership, RoomSnapshot, SubmissionCommand } from '@hear-me-out/shared'
-import type { GameRoom, ServerPlayer } from '../models/room.ts'
+import { DEFAULT_GAME_SETTINGS, MIN_PLAYERS } from '@hear-me-out/shared'
+import type { ErrorCode, GameSettings, RoomMembership, RoomSnapshot, SubmissionScope } from '@hear-me-out/shared'
+import type { GameRoom, ServerPlayer, StoredImage } from '../models/room.ts'
 import { createGameMachine, projectGameState, transitionGame, type RoundEvent } from '../game/gameMachine.ts'
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -36,6 +36,7 @@ interface RoomServiceOptions {
   capacity?: number
   clock?: SubmissionClock
   onRoomUpdate?: (room: RoomSnapshot, serverNow: number) => void
+  onDiscardImage?: (objectKey: string) => void
 }
 
 export interface SubmissionClock {
@@ -61,19 +62,22 @@ export class RoomService {
   private readonly clock: SubmissionClock
   private readonly onRoomUpdate: NonNullable<RoomServiceOptions['onRoomUpdate']>
   private readonly timers = new Map<string, { cancel: () => void }>()
+  private readonly onDiscardImage: (objectKey: string) => void
 
   constructor({ generateCode = generateRoomCode, maxRooms = 1000, capacity = 12,
-    clock = systemClock, onRoomUpdate = () => {} }: RoomServiceOptions = {}) {
+    clock = systemClock, onRoomUpdate = () => {}, onDiscardImage = () => {} }: RoomServiceOptions = {}) {
     this.generateCode = generateCode
     this.maxRooms = maxRooms
     this.capacity = capacity
     this.clock = clock
     this.onRoomUpdate = onRoomUpdate
+    this.onDiscardImage = onDiscardImage
   }
 
   serverTime() { return this.clock.now() }
 
   dispose() {
+    for (const room of this.rooms.values()) this.discardImages(room)
     for (const timer of this.timers.values()) timer.cancel()
     this.timers.clear()
     this.rooms.clear()
@@ -143,6 +147,7 @@ export class RoomService {
     }
 
     if (membership.playerId === room.hostPlayerId) {
+      this.discardImages(room)
       this.cancelTimer(room.id)
       for (const player of room.players.values()) this.memberships.delete(player.connectionId)
       this.rooms.delete(room.code)
@@ -216,7 +221,7 @@ export class RoomService {
     return this.snapshot(room)
   }
 
-  submit(connectionId: string, command: SubmissionCommand): RoomMembership {
+  assertSubmissionOpen(connectionId: string, command: SubmissionScope) {
     const member = this.memberships.get(connectionId)
     const room = member && this.rooms.get(member.code)
     if (!member || !room || room.id !== command.roomId) {
@@ -236,19 +241,25 @@ export class RoomService {
     const round = room.submissionRound!
     if (!round.expectedPlayerIds.has(member.playerId)) throw new RoomError('NOT_A_MEMBER', 'Tu ne participes pas à ce round.')
     if (round.submissions.has(member.playerId)) throw new RoomError('ALREADY_SUBMITTED', 'Ton choix est déjà verrouillé.')
-    if (!DEMO_CHOICES.some((choice) => choice.id === command.choiceId)) throw new RoomError('INVALID_PAYLOAD', 'Choix invalide.')
-    round.submissions.set(member.playerId, {
-      id: randomUUID(), roundId: round.id, playerId: member.playerId,
-      choiceId: command.choiceId, submittedAt: this.clock.now(),
+    return { room, round, playerId: member.playerId, deadlineAt: state.deadlineAt }
+  }
+
+  // Called only with an image decoded and stored by the upload service, never a client URL.
+  submit(connectionId: string, command: SubmissionScope, image: StoredImage): RoomMembership {
+    const { room, round, playerId } = this.assertSubmissionOpen(connectionId, command)
+    round.submissions.set(playerId, {
+      id: randomUUID(), roundId: round.id, playerId,
+      image: { ...image }, submittedAt: this.clock.now(),
     })
     room.revision++
     if (round.submissions.size === round.expectedPlayerIds.size) this.finishSubmission(room)
-    return this.membership(room, member.playerId)
+    return this.membership(room, playerId)
   }
 
   private beginSubmission(room: GameRoom) {
     const state = room.game.state
     if (state.phase !== 'SUBMISSION') return
+    this.discardImages(room)
     room.submissionRound = {
       id: state.roundId, expectedPlayerIds: new Set(room.players.keys()), submissions: new Map(),
     }
@@ -294,12 +305,19 @@ export class RoomService {
   }
 
   private membership(room: GameRoom, playerId: string): RoomMembership {
+    const image = room.submissionRound?.submissions.get(playerId)?.image
     return {
       room: this.snapshot(room), playerId, serverNow: this.serverTime(),
       ownSubmission: {
         roundId: room.submissionRound?.id ?? null,
-        choiceId: room.submissionRound?.submissions.get(playerId)?.choiceId ?? null,
+        image: image ? { id: image.id, previewUrl: image.previewUrl, width: image.width, height: image.height } : null,
       },
+    }
+  }
+
+  private discardImages(room: GameRoom) {
+    for (const submission of room.submissionRound?.submissions.values() ?? []) {
+      this.onDiscardImage(submission.image.objectKey)
     }
   }
 

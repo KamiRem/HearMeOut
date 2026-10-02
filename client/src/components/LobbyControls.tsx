@@ -84,7 +84,7 @@ export function LobbyControls({ membership: { room, playerId }, disabled, setRea
         {isHost && dirty && <p className="field-hint">Enregistre tes modifications.</p>}
       </div>
       {isHost ? (
-        <div className="start-controls">
+        <div className="start-controls"> 
           <button className="start-game" type="button" disabled={!canStart} aria-describedby="start-hint" onClick={() => void startGame()}>Lancer la partie</button>
           <p className="field-hint" id="start-hint" role="status">
             {!enoughPlayers ? 'Invite au moins un autre joueur pour commencer.'

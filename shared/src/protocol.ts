@@ -1,6 +1,6 @@
 import type { CreateRoomCommand, JoinRoomCommand, LeaveRoomCommand, RoomClosed, RoomMembership, RoomSnapshot } from './room.ts'
 import type { LobbyCommand, ReadyCommand, UpdateSettingsCommand } from './lobby.ts'
-import type { SubmissionCommand } from './submission.ts'
+import type { PrepareImageCommand, ImageUploadTicket } from './submission.ts'
 
 export interface ServerHello {
   protocolVersion: 1
@@ -32,6 +32,12 @@ export type ErrorCode =
   | 'DEADLINE_EXPIRED'
   | 'ALREADY_SUBMITTED'
   | 'STALE_ROUND'
+  | 'UPLOAD_UNAVAILABLE'
+  | 'UPLOAD_BUSY'
+  | 'INVALID_UPLOAD_TOKEN'
+  | 'INVALID_IMAGE'
+  | 'IMAGE_TOO_LARGE'
+  | 'STORAGE_ERROR'
 
 export type Result<T> =
   | { ok: true; data: T }
@@ -40,7 +46,7 @@ export type Result<T> =
 export type Ack<T> = (result: Result<T>) => void
 
 export interface ClientToServerEvents {
-  'round:submit': (payload: SubmissionCommand, ack: Ack<RoomMembership>) => void
+  'image:prepare': (payload: PrepareImageCommand, ack: Ack<ImageUploadTicket>) => void
   'player:ready': (payload: ReadyCommand, ack: Ack<RoomMembership>) => void
   'room:settings:update': (payload: UpdateSettingsCommand, ack: Ack<RoomMembership>) => void
   'game:start': (payload: LobbyCommand, ack: Ack<RoomMembership>) => void

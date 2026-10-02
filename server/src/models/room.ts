@@ -1,4 +1,4 @@
-import type { ChoiceId, GameSettings, Player } from '@hear-me-out/shared'
+import type { GameSettings, Player, SubmissionImage } from '@hear-me-out/shared'
 import type { GameMachine } from '../game/gameMachine.ts'
 
 export interface ServerPlayer extends Player {
@@ -21,8 +21,12 @@ export interface Submission {
   id: string
   roundId: string
   playerId: string
-  choiceId: ChoiceId
+  image: StoredImage
   submittedAt: number
+}
+
+export interface StoredImage extends SubmissionImage {
+  objectKey: string
 }
 
 export interface SubmissionRound {
